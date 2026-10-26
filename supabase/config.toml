@@ -1,0 +1,4 @@
+project_id = "ghanareels"
+
+[functions.verifypayment]
+verify_jwt = true

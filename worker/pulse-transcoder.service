@@ -1,0 +1,25 @@
+[Unit]
+Description=Pulse ABR HLS Video Transcoder Worker
+After=network.target
+
+[Service]
+Type=simple
+User=pulse
+Group=pulse
+WorkingDirectory=/opt/pulse-worker
+EnvironmentFile=/opt/pulse-worker/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+LimitNOFILE=65536
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Sandboxing & security hardening
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

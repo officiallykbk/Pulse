@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #000000;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#root {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes heartPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(0.95);
+  }
+  45% {
+    transform: scale(1);
+  }
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Desktop presentation: the app keeps its phone-style layout, centered in a
+ * narrow column with rounded corners (like TikTok's web view), with the tab
+ * actions moved to a vertical side rail. Media queries only apply at >= 768px,
+ * so phones are untouched.
+ */
+@media (min-width: 768px) {
+  body.desktop-frame {
+    background:
+      radial-gradient(1200px 800px at 70% 20%, rgba(0, 230, 118, 0.07), transparent 60%),
+      radial-gradient(1000px 700px at 25% 80%, rgba(33, 150, 243, 0.06), transparent 55%),
+      #050505;
+  }
+
+  body.desktop-frame #root {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/*
+ * Device column + side rail. The phone column is a fixed-width, fixed-height
+ * rounded panel; the rail lives outside it. Everything below is desktop-only
+ * via the .desktop-only / .phone-only helpers.
+ */
+.device-shell {
+  display: flex;
+}
+
+.side-rail {
+  display: none;
+}
+
+.desktop-only {
+  display: none;
+}
+
+.phone-only {
+  display: flex;
+}
+
+@media (min-width: 768px) {
+  .device-shell {
+    align-items: center;
+    gap: 24px;
+  }
+
+  .device-column {
+    width: 100%;
+    max-width: 480px;
+    height: 100vh;
+    max-height: 92vh;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 24px 80px rgba(0, 0, 0, 0.7);
+  }
+
+  .side-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 84px;
+  }
+
+  .desktop-only {
+    display: flex;
+  }
+
+  .phone-only {
+    display: none;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.desktop-hint {
+  display: none;
+}
+
+@media (min-width: 768px) and (pointer: fine) {
+  .desktop-hint {
+    display: flex;
+  }
+}

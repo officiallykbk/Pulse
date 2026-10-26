@@ -1,0 +1,25 @@
+{
+  "name": "pulse-ffmpeg-worker",
+  "version": "1.0.0",
+  "description": "High-Performance ABR HLS Transcoding Worker for Pulse (Oracle Cloud Always-Free ARM)",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["pulse", "ffmpeg", "hls", "abr", "transcoding", "oracle-cloud"],
+  "author": "Pulse Platform",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.19",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
