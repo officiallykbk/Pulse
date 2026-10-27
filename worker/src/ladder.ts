@@ -19,7 +19,6 @@ export interface VideoDimensions {
 
 export function determineDimensions(sourceWidth: number, sourceHeight: number): VideoDimensions {
   const isPortrait = sourceHeight >= sourceWidth;
-  const ratio = (sourceWidth / sourceHeight).toFixed(2);
   const aspectRatio = isPortrait ? '9:16' : '16:9';
 
   return {

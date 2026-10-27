@@ -94,11 +94,12 @@ export class JobQueue {
 
       console.log(`[${this.config.workerId}] Transcoding succeeded! Final master URL: ${finalMasterUrl}`);
 
-      // 4. Update database to ready
+      // 4. Update database to pending_review (mandatory manual review before publishing)
       const { error: updateError } = await this.supabase
         .from('videos')
         .update({
-          status: 'ready',
+          status: 'pending_review',
+          is_active: false,
           video_url: finalMasterUrl,
           hls_master_url: finalMasterUrl,
           thumbnail_url: finalPosterUrl,
@@ -110,10 +111,10 @@ export class JobQueue {
         .eq('id', videoId);
 
       if (updateError) {
-        throw new Error(`Failed to update video record to 'ready': ${updateError.message}`);
+        throw new Error(`Failed to update video record to 'pending_review': ${updateError.message}`);
       }
 
-      console.log(`[${this.config.workerId}] Video ${videoId} marked as READY.`);
+      console.log(`[${this.config.workerId}] Video ${videoId} marked as PENDING_REVIEW (awaiting manual admin review).`);
     } catch (err) {
       const errMsg = (err as Error).message || 'Unknown transcoding error';
       console.error(`[${this.config.workerId}] Transcoding failed for ${videoId}:`, errMsg);

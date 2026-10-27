@@ -130,18 +130,19 @@ async function processVideo(video: ProcessingVideo) {
       .from('videos')
       .getPublicUrl(`${destinationPrefix}/poster.jpg`);
 
-    // 5. Update database status to 'ready'
-    console.log('[Worker] Marking video as ready...');
+    // 5. Update database status to 'pending_review' (manual admin review required)
+    console.log('[Worker] Marking video as pending_review...');
     await supabase
       .from('videos')
       .update({
         video_url: masterUrlData.publicUrl,
         thumbnail_url: posterUrlData.publicUrl,
-        status: 'ready',
+        status: 'pending_review',
+        is_active: false,
       })
       .eq('id', video.id);
 
-    console.log(`[Worker] Successfully transcoded video ${video.id}! Master: ${masterUrlData.publicUrl}`);
+    console.log(`[Worker] Successfully transcoded video ${video.id}! Marked pending_review. Master: ${masterUrlData.publicUrl}`);
   } catch (err) {
     console.error(`[Worker] Error transcoding video ${video.id}:`, err);
     await supabase
