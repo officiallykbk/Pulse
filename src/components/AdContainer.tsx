@@ -1,5 +1,6 @@
 import { AdController } from '@/components/AdController';
 import type { UserTier } from '@/types';
+import type { AdNetworkId } from '@/services/adMediation';
 
 export interface AdContainerProps {
   tier: UserTier;
@@ -7,6 +8,7 @@ export interface AdContainerProps {
   onUpgrade: () => void;
   onLockChange: (locked: boolean) => void;
   vastUrl?: string | null;
+  waterfallOrder?: AdNetworkId[];
 }
 
 /**

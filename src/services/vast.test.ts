@@ -36,6 +36,52 @@ describe('VAST XML Parser', () => {
     expect(parsed?.durationSeconds).toBe(15);
   });
 
+  it('correctly extracts impression, quartile, and skip tracking beacons from VAST XML', () => {
+    const trackingVast = `
+      <VAST version="3.0">
+        <Ad id="ad-202">
+          <InLine>
+            <AdTitle>Tracked Video Ad</AdTitle>
+            <Impression>https://tracker.example.com/impression</Impression>
+            <Creatives>
+              <Creative>
+                <Linear>
+                  <Duration>00:00:30</Duration>
+                  <TrackingEvents>
+                    <Tracking event="start">https://tracker.example.com/start</Tracking>
+                    <Tracking event="firstQuartile">https://tracker.example.com/q1</Tracking>
+                    <Tracking event="midpoint">https://tracker.example.com/mid</Tracking>
+                    <Tracking event="thirdQuartile">https://tracker.example.com/q3</Tracking>
+                    <Tracking event="complete">https://tracker.example.com/complete</Tracking>
+                    <Tracking event="skip">https://tracker.example.com/skip</Tracking>
+                  </TrackingEvents>
+                  <VideoClicks>
+                    <ClickThrough>https://sponsor.example.com/offer</ClickThrough>
+                    <ClickTracking>https://tracker.example.com/click</ClickTracking>
+                  </VideoClicks>
+                  <MediaFiles>
+                    <MediaFile type="video/mp4">https://cdn.example.com/video.mp4</MediaFile>
+                  </MediaFiles>
+                </Linear>
+              </Creative>
+            </Creatives>
+          </InLine>
+        </Ad>
+      </VAST>
+    `;
+
+    const parsed = parseVastXml(trackingVast);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.trackingUrls?.impressions).toContain('https://tracker.example.com/impression');
+    expect(parsed?.trackingUrls?.start).toContain('https://tracker.example.com/start');
+    expect(parsed?.trackingUrls?.firstQuartile).toContain('https://tracker.example.com/q1');
+    expect(parsed?.trackingUrls?.midpoint).toContain('https://tracker.example.com/mid');
+    expect(parsed?.trackingUrls?.thirdQuartile).toContain('https://tracker.example.com/q3');
+    expect(parsed?.trackingUrls?.complete).toContain('https://tracker.example.com/complete');
+    expect(parsed?.trackingUrls?.skip).toContain('https://tracker.example.com/skip');
+    expect(parsed?.trackingUrls?.clickTracking).toContain('https://tracker.example.com/click');
+  });
+
   it('returns null for empty or non-fill VAST response', () => {
     const emptyVast = '<VAST version="3.0"></VAST>';
     const parsed = parseVastXml(emptyVast);

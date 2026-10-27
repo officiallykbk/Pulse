@@ -89,4 +89,42 @@ describe('AdController', () => {
     fireEvent.click(upgradeBtn);
     expect(onUpgrade).toHaveBeenCalledTimes(1);
   });
+
+  it('renders Learn More CTA and handles safe click-through without popunders', async () => {
+    const onNext = vi.fn();
+    const onUpgrade = vi.fn();
+    const onLockChange = vi.fn();
+
+    // Mock fetchVastAd returning an ad with clickthrough
+    const vastModule = await import('@/services/vast');
+    vi.spyOn(vastModule, 'fetchVastAd').mockResolvedValue({
+      videoUrl: 'https://cdn.example.com/ad.mp4',
+      clickThroughUrl: 'https://sponsor.example.com/clean-offer',
+      title: 'Partner Reel',
+    });
+
+    const adMediationModule = await import('@/services/adMediation');
+    const safeOpenSpy = vi.spyOn(adMediationModule, 'safeOpenClickThrough').mockReturnValue(true);
+
+    render(
+      <AdController
+        tier="free"
+        onNext={onNext}
+        onUpgrade={onUpgrade}
+        onLockChange={onLockChange}
+        vastUrl="https://custom.vast.com"
+      />
+    );
+
+    // Wait for the async load
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const learnMoreBtn = screen.getByRole('button', { name: /Learn More/i });
+    expect(learnMoreBtn).toBeInTheDocument();
+
+    fireEvent.click(learnMoreBtn);
+    expect(safeOpenSpy).toHaveBeenCalledWith('https://sponsor.example.com/clean-offer');
+  });
 });
