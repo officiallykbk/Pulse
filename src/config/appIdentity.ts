@@ -36,8 +36,8 @@ export interface AppIdentity {
 export const APP_IDENTITY: AppIdentity = {
   name: 'Pulse',
   shortName: 'Pulse',
-  tagline: 'High-Performance Video Streaming',
-  description: 'High-performance short-video platform engineered for instant playback and seamless swiping anywhere.',
+  tagline: 'Short videos. Ghanaian energy.',
+  description: 'A home for short videos, creators, and culture from Ghana and beyond.',
   defaultMemberName: 'Pulse member',
   supportEmail: 'support@pulse.video',
   version: '1.0.0',

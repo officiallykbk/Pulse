@@ -1,0 +1,24 @@
+{
+  "days": [
+    { "day": "Monday", "masculine": "Kwadwo", "feminine": "Adwoa" },
+    { "day": "Tuesday", "masculine": "Kwabena", "feminine": "Abena" },
+    { "day": "Wednesday", "masculine": "Kwaku", "feminine": "Akua" },
+    { "day": "Thursday", "masculine": "Yaw", "feminine": "Yaa" },
+    { "day": "Friday", "masculine": "Kofi", "feminine": "Afia" },
+    { "day": "Saturday", "masculine": "Kwame", "feminine": "Ama" },
+    { "day": "Sunday", "masculine": "Kwasi", "feminine": "Akosua" }
+  ],
+  "adjectives": {
+    "traditional": ["Swift", "Digital", "Bright", "Golden", "Chill", "Bold"],
+    "ghanaian": ["Chill", "Sharp", "Bold", "Fresh", "Wavy", "Easy", "Groovy", "Bright", "Jolly"],
+    "global": ["Pixel", "Neon", "Cloud", "Nova", "Turbo", "Cosmic", "Byte", "Echo"]
+  },
+  "nouns": {
+    "ghanaian": ["Cocoa", "Coast", "Highlife", "Market", "Drummer", "Baobab", "Dancer", "Wave"],
+    "global": ["Creator", "Maker", "Studio", "Loop", "Spark", "Frame", "Motion", "Signal"]
+  },
+  "twiNouns": {
+    "animals": ["Ɔsono", "Ananse", "Gyata", "Adanko", "Opuro", "Bonsu", "Akokɔ"],
+    "places": ["Kwae", "Kurow", "Beaeɛ", "Baabi", "Asubɔnten"]
+  }
+}
