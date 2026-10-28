@@ -11,6 +11,7 @@ import { useFollow } from '@/hooks/useFollow';
 import { useSoundState } from '@/hooks/useSoundState';
 import { feedActions } from '@/lib/feedActions';
 import { supabase } from '@/services/supabase';
+import { submitReport } from '@/services/reportService';
 import { ageVerificationService } from '@/services/ageVerification';
 import { anonymousState } from '@/lib/anonymousState';
 import { APP_IDENTITY } from '@/config/appIdentity';
@@ -237,20 +238,16 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   }, [video.title, video.description, video.id, shareUrl]);
 
   const handleReport = useCallback(async (reason: string) => {
-    if (tier === 'anonymous') {
-      onRequireAuth();
-      return;
-    }
-    const { error } = await supabase.from('reports').insert({
-      video_id: video.id,
+    const result = await submitReport({
+      videoId: video.id,
       reason,
     });
-    if (error) {
-      toast.error("Eish, that didn't go through. Try again?");
+    if (!result.success) {
+      toast.error(result.error || "Eish, that didn't go through. Try again?");
     } else {
-      toast.success('Report submitted. Thank you.');
+      toast.success(result.message || 'Report submitted. Thank you.');
     }
-  }, [video.id, tier, onRequireAuth]);
+  }, [video.id]);
 
   const handleCommentClick = useCallback(() => {
     if (tier === 'anonymous') {

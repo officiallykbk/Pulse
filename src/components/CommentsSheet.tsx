@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
 import { useComments, type CommentWithAuthor } from '@/hooks/useComments';
 import { supabase } from '@/services/supabase';
+import { submitReport } from '@/services/reportService';
 
 interface CommentsSheetProps {
   videoId: string;
@@ -270,21 +271,21 @@ export function CommentsSheet({
   };
 
   const handleReport = async (comment: CommentWithAuthor, reason: string) => {
-    if (!currentUserId) {
-      toast('Sign in to report a comment.');
-      setActionMenuId(null);
-      return;
-    }
     setReportingId(comment.id);
-    let reportError: boolean;
+    let reportError = false;
+    let errorMessage: string | undefined;
     try {
-      const { error } = await supabase.from('reports').insert({
-        video_id: videoId,
-        reported_user_id: comment.user_id,
+      const res = await submitReport({
+        videoId,
+        reportedUserId: comment.user_id,
+        commentId: comment.id,
         reason: `comment_${reason}`,
         details: `Comment ID: ${comment.id}`,
       });
-      reportError = Boolean(error);
+      if (!res.success) {
+        reportError = true;
+        errorMessage = res.error;
+      }
     } catch {
       reportError = true;
     } finally {
@@ -292,9 +293,18 @@ export function CommentsSheet({
       setActionMenuId(null);
     }
     if (reportError) {
-      toast.error('Could not send that report. Please try again.');
+      const msg = errorMessage || 'Could not send that report. Please try again.';
+      if (typeof toast.error === 'function') {
+        toast.error(msg);
+      } else {
+        toast(msg);
+      }
     } else {
-      toast.success('Thanks. Our team will review this comment.');
+      if (typeof toast.success === 'function') {
+        toast.success('Thanks. Our team will review this comment.');
+      } else {
+        toast('Thanks. Our team will review this comment.');
+      }
     }
   };
 
