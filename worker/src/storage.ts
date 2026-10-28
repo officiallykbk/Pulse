@@ -35,7 +35,6 @@ export class StorageService {
         throw new Error(`Failed to download raw video from ${sourceUrlOrPath}: HTTP ${response.status}`);
       }
       const fileStream = createWriteStream(destinationPath);
-      // @ts-expect-error - web stream to node stream in pipeline
       await pipeline(response.body, fileStream);
       return;
     }

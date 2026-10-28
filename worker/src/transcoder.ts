@@ -152,11 +152,13 @@ export class Transcoder {
     const posterPath = path.join(outputDir, 'poster.webp');
     await this.extractPoster(inputPath, posterPath, probe.duration);
 
-    // 3. Transcode each variant
-    for (const variant of variants) {
-      const variantDir = path.join(outputDir, variant.name);
-      await this.transcodeVariant(inputPath, variantDir, variant);
-    }
+    // 3. Transcode variants in parallel for maximum ARM multi-core throughput
+    await Promise.all(
+      variants.map((variant) => {
+        const variantDir = path.join(outputDir, variant.name);
+        return this.transcodeVariant(inputPath, variantDir, variant);
+      })
+    );
 
     // 4. Generate master.m3u8
     const masterPlaylistContent = buildMasterPlaylist(variants);

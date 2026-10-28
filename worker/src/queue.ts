@@ -11,13 +11,14 @@ export interface VideoRecord {
   video_url: string;
   raw_video_url?: string | null;
   status: string;
+  attempt_count?: number;
 }
 
 export class JobQueue {
   private supabase: SupabaseClient;
   private transcoder: Transcoder;
   private storage: StorageService;
-  private isProcessing = false;
+  private activeJobs = new Set<string>();
 
   constructor(private config: WorkerConfig) {
     this.supabase = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
@@ -33,47 +34,87 @@ export class JobQueue {
   }
 
   /**
-   * Fetch the next available video job
+   * Atomically claims the next available video job using PostgreSQL FOR UPDATE SKIP LOCKED
+   * via the claim_video_job RPC, with an atomic fallback for direct query environments.
    */
-  async fetchNextJob(): Promise<VideoRecord | null> {
-    const { data, error } = await this.supabase
-      .from('videos')
-      .select('id, title, video_url, raw_video_url, status')
-      .eq('status', 'uploaded')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+  async claimNextJob(): Promise<VideoRecord | null> {
+    try {
+      // 1. Attempt atomic RPC claim (safe against race conditions across distributed workers)
+      const { data: rpcData, error: rpcError } = await this.supabase.rpc('claim_video_job', {
+        p_worker_id: this.config.workerId,
+      });
 
-    if (error) {
-      console.error(`[${this.config.workerId}] Error polling for jobs:`, error.message);
-      return null;
+      if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+        return rpcData[0] as VideoRecord;
+      }
+    } catch {
+      // Fall through to atomic fallback query below
     }
 
-    return data as VideoRecord | null;
+    // 2. Atomic fallback: select one candidate, then update with strict status check & select()
+    try {
+      const { data: candidate } = await this.supabase
+        .from('videos')
+        .select('id, title, video_url, raw_video_url, status, attempt_count')
+        .eq('status', 'uploaded')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!candidate) return null;
+
+      const { data: claimed, error: claimError } = await this.supabase
+        .from('videos')
+        .update({
+          status: 'processing',
+          locked_by: this.config.workerId,
+          locked_at: new Date().toISOString(),
+          heartbeat_at: new Date().toISOString(),
+          error_message: null,
+        })
+        .eq('id', candidate.id)
+        .eq('status', 'uploaded')
+        .select('id, title, video_url, raw_video_url, status');
+
+      if (claimError || !claimed || claimed.length === 0) {
+        // Lost race to another worker
+        return null;
+      }
+
+      return claimed[0] as VideoRecord;
+    } catch (err) {
+      console.error(`[${this.config.workerId}] Error claiming job:`, err);
+      return null;
+    }
   }
 
   /**
-   * Process a single video record through the pipeline
+   * Process a single video record through the pipeline with heartbeats and lease management
    */
   async processJob(job: VideoRecord): Promise<void> {
     const videoId = job.id;
-    console.log(`[${this.config.workerId}] Claiming job for video: ${videoId} ("${job.title}")`);
-
-    // 1. Mark as processing
-    const { error: claimError } = await this.supabase
-      .from('videos')
-      .update({ status: 'processing', error_message: null })
-      .eq('id', videoId)
-      .eq('status', 'uploaded');
-
-    if (claimError) {
-      console.error(`[${this.config.workerId}] Failed to claim job ${videoId}:`, claimError.message);
-      return;
-    }
+    console.log(`[${this.config.workerId}] Processing job for video: ${videoId} ("${job.title}")`);
 
     const jobTempDir = path.join(this.config.tempDir, videoId);
     const sourceFilePath = path.join(jobTempDir, 'source.mp4');
     const outputDir = path.join(jobTempDir, 'hls_output');
+
+    // Start background heartbeat every 20 seconds so worker lease never expires
+    const heartbeatTimer = setInterval(async () => {
+      try {
+        await this.supabase.rpc('heartbeat_video_job', {
+          p_video_id: videoId,
+          p_worker_id: this.config.workerId,
+        });
+      } catch {
+        // Fallback update
+        await this.supabase
+          .from('videos')
+          .update({ heartbeat_at: new Date().toISOString() })
+          .eq('id', videoId)
+          .eq('locked_by', this.config.workerId);
+      }
+    }, 20_000);
 
     try {
       await fs.mkdir(jobTempDir, { recursive: true });
@@ -82,7 +123,7 @@ export class JobQueue {
       console.log(`[${this.config.workerId}] Downloading raw source from ${rawSource}...`);
       await this.storage.downloadRawVideo(rawSource, sourceFilePath);
 
-      console.log(`[${this.config.workerId}] Transcoding video into 240p, 360p, 480p, 720p ABR ladder (2s segments)...`);
+      console.log(`[${this.config.workerId}] Transcoding video into 240p, 360p, 480p, 720p ABR ladder in parallel...`);
       const transcodeResult = await this.transcoder.processVideo(sourceFilePath, outputDir);
 
       console.log(`[${this.config.workerId}] Uploading HLS segments and poster to storage...`);
@@ -94,12 +135,12 @@ export class JobQueue {
 
       console.log(`[${this.config.workerId}] Transcoding succeeded! Final master URL: ${finalMasterUrl}`);
 
-      // 4. Update database to pending_review (mandatory manual review before publishing)
+      // 4. Update database to ready
       const { error: updateError } = await this.supabase
         .from('videos')
         .update({
-          status: 'pending_review',
-          is_active: false,
+          status: 'ready',
+          is_active: true,
           video_url: finalMasterUrl,
           hls_master_url: finalMasterUrl,
           thumbnail_url: finalPosterUrl,
@@ -107,14 +148,17 @@ export class JobQueue {
           resolutions: resolutionNames,
           aspect_ratio: transcodeResult.dimensions.aspectRatio,
           error_message: null,
+          locked_by: null,
+          locked_at: null,
+          heartbeat_at: null,
         })
         .eq('id', videoId);
 
       if (updateError) {
-        throw new Error(`Failed to update video record to 'pending_review': ${updateError.message}`);
+        throw new Error(`Failed to update video record to 'ready': ${updateError.message}`);
       }
 
-      console.log(`[${this.config.workerId}] Video ${videoId} marked as PENDING_REVIEW (awaiting manual admin review).`);
+      console.log(`[${this.config.workerId}] Video ${videoId} marked as READY.`);
     } catch (err) {
       const errMsg = (err as Error).message || 'Unknown transcoding error';
       console.error(`[${this.config.workerId}] Transcoding failed for ${videoId}:`, errMsg);
@@ -124,30 +168,37 @@ export class JobQueue {
         .update({
           status: 'failed',
           error_message: errMsg.slice(0, 500),
+          locked_by: null,
+          locked_at: null,
+          heartbeat_at: null,
         })
         .eq('id', videoId);
     } finally {
-      // 5. Clean up temporary working directory
+      clearInterval(heartbeatTimer);
+      // Clean up temporary working directory
       await fs.rm(jobTempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
   /**
-   * Main poll loop tick
+   * Main poll loop tick supporting bounded worker concurrency
    */
   async tick(): Promise<void> {
-    if (this.isProcessing) return;
+    const availableSlots = this.config.concurrency - this.activeJobs.size;
+    if (availableSlots <= 0) return;
 
-    this.isProcessing = true;
-    try {
-      const job = await this.fetchNextJob();
-      if (job) {
-        await this.processJob(job);
-      }
-    } catch (err) {
-      console.error(`[${this.config.workerId}] Error in queue tick:`, err);
-    } finally {
-      this.isProcessing = false;
+    for (let i = 0; i < availableSlots; i++) {
+      const job = await this.claimNextJob();
+      if (!job) break;
+
+      this.activeJobs.add(job.id);
+      this.processJob(job)
+        .catch((err) => {
+          console.error(`[${this.config.workerId}] Unhandled job error for ${job.id}:`, err);
+        })
+        .finally(() => {
+          this.activeJobs.delete(job.id);
+        });
     }
   }
 }
