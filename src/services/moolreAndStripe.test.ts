@@ -42,7 +42,7 @@ describe('Moolre & Stripe Payment Services', () => {
     });
 
     it('initiates mobile money charge and returns pending prompt status', async () => {
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response(
           JSON.stringify({
             success: true,
@@ -55,7 +55,7 @@ describe('Moolre & Stripe Payment Services', () => {
 
       const res = await initiateMoolreCharge({
         phoneNumber: '0241234567',
-        network: 'MTN',
+        network: 'mtn',
         amount: 10,
         email: 'test@pulse.video',
         reference: 'pulse_mo_123',
@@ -64,6 +64,14 @@ describe('Moolre & Stripe Payment Services', () => {
       expect(res.success).toBe(true);
       expect(res.reference).toBe('pulse_mo_123');
       expect(res.status).toBe('pending');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/payments/verify',
+        expect.objectContaining({
+          method: 'POST',
+        })
+      );
+      const callInit = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect((callInit.headers as Record<string, string>)?.Authorization).toBeUndefined();
     });
   });
 
@@ -84,7 +92,7 @@ describe('Moolre & Stripe Payment Services', () => {
     });
 
     it('creates checkout session and returns redirect URL', async () => {
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response(
           JSON.stringify({
             success: true,
@@ -102,6 +110,14 @@ describe('Moolre & Stripe Payment Services', () => {
 
       expect(res.url).toBe('https://checkout.stripe.com/c/pay/cs_test_123');
       expect(res.sessionId).toBe('cs_test_123');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/payments/verify',
+        expect.objectContaining({
+          method: 'POST',
+        })
+      );
+      const callInit = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect((callInit.headers as Record<string, string>)?.Authorization).toBeUndefined();
     });
   });
 });

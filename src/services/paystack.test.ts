@@ -52,15 +52,15 @@ describe('verifyPayment (client-side payment verification)', () => {
     expect(result.error).toBeNull();
   });
 
-  it('sends the reference with an Authorization header', async () => {
+  it('sends the reference to same-origin payment route without client bearer tokens', async () => {
     setSession(true);
-    mockFetch.mockResolvedValue(okResponse({ success: true }));
+    mockFetch.mockResolvedValue(okResponse({ ok: true, success: true }));
 
     await verifyPayment('ref-abc');
     const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toContain('/functions/v1/verifypayment');
-    expect(init.headers.Authorization).toBe('Bearer token-123');
-    expect(JSON.parse(init.body)).toEqual({ reference: 'ref-abc' });
+    expect(url).toBe('/api/payments/verify');
+    expect(init?.headers?.Authorization).toBeUndefined();
+    expect(JSON.parse(init.body)).toEqual({ reference: 'ref-abc', provider: 'paystack' });
   });
 
   it('refuses to verify when not signed in', async () => {

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, Check, AlertCircle, Film, Link2, X, ShieldAlert, Lock, Globe, AlertTriangle } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { supabase, accountSupabase } from '@/services/supabase';
+import { sessionService } from '@/services/session';
 import {
   extractVideoMetadataAndThumbnail,
   uploadVideoFile,
@@ -45,7 +46,8 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const checkBan = async () => {
+      const user = sessionService.getSnapshot().user || (await supabase.auth?.getUser?.())?.data?.user;
       if (user) {
         supabase
           .from('profiles')
@@ -59,7 +61,8 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
             }
           });
       }
-    });
+    };
+    void checkBan();
   }, []);
 
   const processFile = async (file: File) => {
@@ -193,9 +196,10 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
       }
 
       setStatusMessage('Queuing video for moderation review...');
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = sessionService.getSnapshot().user || (await supabase.auth?.getUser?.())?.data?.user;
 
-      const { error: insertError } = await supabase.from('videos').insert({
+      const client = accountSupabase || supabase;
+      const { error: insertError } = await client.from('videos').insert({
         title: title.trim(),
         description: description.trim() || null,
         tags: [...new Set([...(title.match(/#[\p{L}\p{N}_]+/gu) ?? []), ...(description.match(/#[\p{L}\p{N}_]+/gu) ?? [])]

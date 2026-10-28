@@ -46,9 +46,9 @@ describe('Unified Provider-Agnostic Payment Engine', () => {
       expect(res.error).toBe('Sign in first to complete your subscription');
     });
 
-    it('sends the reference and provider to the Edge Function', async () => {
+    it('sends the reference and provider to the same-origin payment route without bearer tokens', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify({ success: true, expiresAt: '2026-11-26T00:00:00Z' }), {
+        new Response(JSON.stringify({ ok: true, success: true, expiresAt: '2026-11-26T00:00:00Z' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -57,12 +57,14 @@ describe('Unified Provider-Agnostic Payment Engine', () => {
       const res = await verifyPayment('pulse_mo_123', 'moolre');
       expect(res.ok).toBe(true);
       expect(fetchSpy).toHaveBeenCalledWith(
-        expect.stringContaining('/functions/v1/verifypayment'),
+        '/api/payments/verify',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ reference: 'pulse_mo_123', provider: 'moolre' }),
         })
       );
+      const callInit = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect((callInit.headers as Record<string, string>)?.Authorization).toBeUndefined();
     });
 
     it('surfaces error message when payment verification fails', async () => {

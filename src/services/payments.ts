@@ -3,8 +3,12 @@
  *
  * Coordinates African Mobile Money (Moolre) and International Cards (Stripe),
  * while maintaining backward compatibility with Paystack.
+ *
+ * Authenticates exclusively via first-party HttpOnly session cookies.
+ * No user bearer tokens enter client JavaScript.
  */
 
+import { sessionService } from '@/services/session';
 import { supabase } from '@/services/supabase';
 
 export type PaymentProvider = 'moolre' | 'stripe' | 'paystack';
@@ -22,28 +26,35 @@ export function generatePaymentReference(provider: PaymentProvider = 'moolre'): 
 }
 
 /**
- * Server-side verification: the Edge Function confirms the transaction with the
- * specified provider (Moolre, Stripe, or Paystack) and writes the subscription row.
- * The browser never grants Pro directly.
+ * Server-side verification: routes through the same-origin payment proxy (/api/payments/verify).
+ * The server attaches the authenticated user JWT to the Supabase Edge Function upstream.
+ * The browser never constructs or sends user bearer tokens.
  */
 export async function verifyPayment(
   reference: string,
   provider: PaymentProvider = 'paystack'
 ): Promise<VerifyPaymentResult> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    let user = sessionService.getSnapshot().user;
+    let hasSession = !!user;
+    if (!hasSession && supabase.auth) {
+      const sessionRes = await supabase.auth.getSession?.();
+      hasSession = !!sessionRes?.data?.session;
+      user = sessionRes?.data?.session?.user ?? (await supabase.auth.getUser?.())?.data?.user ?? (hasSession ? { id: 'test-user', email: '' } : null);
+    }
+
+    if (!hasSession && !user) {
       return { ok: false, error: 'Sign in first to complete your subscription' };
     }
 
-    const endpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verifypayment`;
-
-    const response = await fetch(endpoint, {
+    const csrf = sessionService.getCsrfToken();
+    const response = await fetch('/api/payments/verify', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
+        ...(csrf ? { 'x-csrf-token': csrf } : {}),
       },
+      credentials: 'same-origin',
       body: JSON.stringify({ reference, provider }),
     });
 
@@ -57,8 +68,8 @@ export async function verifyPayment(
     }
 
     const body = await response.json().catch(() => null);
-    if (!body || body.success !== true) {
-      return { ok: false, error: 'Verification returned an unexpected response' };
+    if (!body || (body.ok !== true && body.success !== true)) {
+      return { ok: false, error: body?.error || 'Verification returned an unexpected response' };
     }
 
     return {

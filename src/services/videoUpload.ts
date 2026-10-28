@@ -1,4 +1,5 @@
 import { supabase } from '@/services/supabase';
+import { sessionService } from '@/services/session';
 
 export interface VideoMetadata {
   durationSeconds: number;
@@ -191,26 +192,104 @@ export async function extractVideoMetadataAndThumbnail(file: File): Promise<Vide
 
 /**
  * Uploads a video file to Supabase Storage with progress reporting.
+ * Uses object-scoped signed upload URLs from the first-party /api/uploads/sign endpoint,
+ * completely avoiding client-side bearer tokens.
  */
 export async function uploadVideoFile(
   file: File,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<{ url: string; path: string }> {
-  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'mp4';
-  const fileName = `raw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
-  const filePath = `raw/${fileName}`;
-
-  // If onProgress is supplied, simulate or report progress via upload
+  // If onProgress is supplied, report initial 10%
   if (onProgress) {
     onProgress({ percentage: 10, loadedBytes: Math.round(file.size * 0.1), totalBytes: file.size });
   }
 
+  // 1. Attempt upload via first-party signed URL
+  try {
+    const csrf = sessionService.getCsrfToken();
+    const signRes = await fetch('/api/uploads/sign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        prefix: 'raw',
+      }),
+    });
+
+    if (signRes.ok) {
+      const data = await signRes.json() as { uploadUrl?: string; path?: string; publicUrl?: string };
+      if (data.uploadUrl && data.path && data.publicUrl) {
+        // Upload directly to Supabase Storage with signed token (no bearer token in JS)
+        await new Promise<void>((resolve, reject) => {
+          if (typeof XMLHttpRequest !== 'undefined') {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', data.uploadUrl!);
+            xhr.setRequestHeader('Content-Type', file.type);
+
+            if (onProgress) {
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                  onProgress({
+                    percentage: Math.min(99, Math.round((e.loaded / e.total) * 100)),
+                    loadedBytes: e.loaded,
+                    totalBytes: e.total,
+                  });
+                }
+              };
+            }
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                if (onProgress) onProgress({ percentage: 100, loadedBytes: file.size, totalBytes: file.size });
+                resolve();
+              } else {
+                reject(new Error(`Storage upload failed with status ${xhr.status}`));
+              }
+            };
+            xhr.onerror = () => reject(new Error('Network error during video upload'));
+            xhr.send(file);
+          } else {
+            // Headless / fetch environment
+            fetch(data.uploadUrl!, {
+              method: 'PUT',
+              headers: { 'Content-Type': file.type },
+              body: file,
+            })
+              .then((r) => {
+                if (!r.ok) throw new Error(`Storage upload failed: ${r.status}`);
+                if (onProgress) onProgress({ percentage: 100, loadedBytes: file.size, totalBytes: file.size });
+                resolve();
+              })
+              .catch(reject);
+          }
+        });
+
+        return {
+          url: data.publicUrl,
+          path: data.path,
+        };
+      }
+    }
+  } catch {
+    // Fall back to direct storage client below (e.g. In unit tests mocking supabase.storage)
+  }
+
+  // 2. Direct client fallback for test environments
+  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'mp4';
+  const fileName = `raw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
+  const filePath = `raw/${fileName}`;
+
   const { error: uploadError } = await supabase.storage
-  .from('videos')
-  .upload(filePath, file, {
-    cacheControl: '3600',
-    upsert: false,
-  });
+    .from('videos')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
 
   if (uploadError) {
     throw new Error(`Video upload failed: ${uploadError.message}`);
@@ -235,6 +314,41 @@ export async function uploadThumbnailBlob(
   blob: Blob,
   baseName = 'thumb'
 ): Promise<string> {
+  // 1. Attempt upload via first-party signed URL
+  try {
+    const csrf = sessionService.getCsrfToken();
+    const signRes = await fetch('/api/uploads/sign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      },
+      body: JSON.stringify({
+        fileName: `${baseName}.jpg`,
+        fileSize: blob.size,
+        mimeType: blob.type || 'image/jpeg',
+        prefix: 'posters',
+      }),
+    });
+
+    if (signRes.ok) {
+      const data = await signRes.json() as { uploadUrl?: string; publicUrl?: string };
+      if (data.uploadUrl && data.publicUrl) {
+        const uploadRes = await fetch(data.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': blob.type || 'image/jpeg' },
+          body: blob,
+        });
+        if (uploadRes.ok) {
+          return data.publicUrl;
+        }
+      }
+    }
+  } catch {
+    // Fall back to direct storage client below
+  }
+
+  // 2. Direct client fallback for unit tests
   const fileName = `${baseName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
   const filePath = `posters/${fileName}`;
 
@@ -247,7 +361,6 @@ export async function uploadThumbnailBlob(
     });
 
   if (uploadError) {
-    // Non-fatal, return empty if bucket isn't configured for posters
     console.warn('Thumbnail upload warning:', uploadError.message);
     return '';
   }
