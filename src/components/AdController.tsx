@@ -8,6 +8,7 @@ import {
   safeOpenClickThrough,
   type AdNetworkId,
 } from '@/services/adMediation';
+import { loadAppSettings } from '@/lib/settings';
 
 export interface AdControllerProps {
   tier: UserTier;
@@ -16,6 +17,24 @@ export interface AdControllerProps {
   onLockChange: (locked: boolean) => void;
   vastUrl?: string | null;
   waterfallOrder?: AdNetworkId[];
+}
+
+export type AdStatus = 'resolving' | 'filled' | 'no-fill' | 'error';
+
+/**
+ * Checks if the browser or user has activated Data Saver mode.
+ * When enabled, Pulse avoids fetching heavy multi-megabyte VAST video payloads.
+ */
+export function isDataSaverActive(): boolean {
+  if (typeof navigator !== 'undefined' && (navigator as unknown as { connection?: { saveData?: boolean } }).connection?.saveData) {
+    return true;
+  }
+  try {
+    const settings = loadAppSettings();
+    return !!settings.dataSaver;
+  } catch {
+    return false;
+  }
 }
 
 export function AdController({
@@ -27,6 +46,7 @@ export function AdController({
   waterfallOrder,
 }: AdControllerProps) {
   const initialDelay = getSkipDelay(tier);
+  const [adStatus, setAdStatus] = useState<AdStatus>('resolving');
   const [canSkip, setCanSkip] = useState(initialDelay <= 0);
   const [timeLeft, setTimeLeft] = useState(initialDelay);
   const [adVideo, setAdVideo] = useState<ParsedVastAd | null>(null);
@@ -45,22 +65,56 @@ export function AdController({
     complete: false,
   });
 
-  // 1. Fetch In-Stream VAST Ad via Mediation Waterfall
+  // 1. Fetch In-Stream VAST Ad via Mediation Waterfall (Respects Data Saver)
   useEffect(() => {
     let cancelled = false;
 
     async function loadAd() {
-      if (vastUrl) {
-        const ad = await fetchVastAd(vastUrl);
-        if (!cancelled && ad?.videoUrl) {
-          setAdVideo(ad);
-          setNetworkName('Direct Sponsor');
+      // If Data Saver is active, skip heavy video auction and use lightweight sponsor card
+      if (isDataSaverActive()) {
+        if (!cancelled) {
+          setAdStatus('no-fill');
+          setCanSkip(true);
+          onLockChange(false);
         }
-      } else {
-        const waterfall = await fetchWaterfallAd(waterfallOrder);
-        if (!cancelled && waterfall?.ad.videoUrl) {
-          setAdVideo(waterfall.ad);
-          setNetworkName(waterfall.networkName);
+        return;
+      }
+
+      setAdStatus('resolving');
+
+      try {
+        if (vastUrl) {
+          const ad = await fetchVastAd(vastUrl);
+          if (!cancelled) {
+            if (ad?.videoUrl) {
+              setAdVideo(ad);
+              setNetworkName('Direct Sponsor');
+              setAdStatus('filled');
+            } else {
+              setAdStatus('no-fill');
+              setCanSkip(true);
+              onLockChange(false);
+            }
+          }
+        } else {
+          const waterfall = await fetchWaterfallAd(waterfallOrder);
+          if (!cancelled) {
+            if (waterfall?.ad.videoUrl) {
+              setAdVideo(waterfall.ad);
+              setNetworkName(waterfall.networkName);
+              setAdStatus('filled');
+            } else {
+              setAdStatus('no-fill');
+              setCanSkip(true);
+              onLockChange(false);
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setAdStatus('error');
+          setCanSkip(true);
+          onLockChange(false);
         }
       }
     }
@@ -70,22 +124,33 @@ export function AdController({
     return () => {
       cancelled = true;
     };
-  }, [vastUrl, waterfallOrder]);
+  }, [vastUrl, waterfallOrder, onLockChange]);
 
-  // 2. 5-Second Mandatory Lock Countdown (Spotify Model)
+  // 2. Mandatory Lock Countdown: Strictly applies ONLY when a video ad is filled & playable
   useEffect(() => {
-    if (initialDelay <= 0) {
+    // Never lock if tier delay is 0, or if ad is not filled, or if video failed
+    if (initialDelay <= 0 || adStatus !== 'filled' || videoError) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       setCanSkip(true);
       onLockChange(false);
       return;
     }
 
+    // Only filled revenue ads apply the mandatory 5-second countdown
     onLockChange(true);
+    setCanSkip(false);
+    setTimeLeft(initialDelay);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
           setCanSkip(true);
           onLockChange(false);
           return 0;
@@ -95,10 +160,13 @@ export function AdController({
     }, 1000);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       onLockChange(false);
     };
-  }, [initialDelay, onLockChange]);
+  }, [initialDelay, adStatus, videoError, onLockChange]);
 
   // VAST Tracking: Progress Beacons (25%, 50%, 75%)
   const handleTimeUpdate = useCallback(() => {
@@ -164,7 +232,10 @@ export function AdController({
 
   const handleVideoError = useCallback(() => {
     setVideoError(true);
-  }, []);
+    setAdStatus('error');
+    setCanSkip(true);
+    onLockChange(false);
+  }, [onLockChange]);
 
   const progress = initialDelay > 0 ? ((initialDelay - timeLeft) / initialDelay) * 100 : 100;
 
@@ -230,16 +301,12 @@ export function AdController({
         </button>
       </div>
 
-      {/* Center: Advertiser message or sponsor card */}
+      {/* Center: Advertiser message or sponsor card (No lock icon on un-locked cards) */}
       <div className="relative z-10 mx-auto flex max-w-xs flex-col items-center px-4 text-center">
         {!adVideo?.videoUrl || videoError ? (
           <>
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#181818] ring-1 ring-white/15">
-              {canSkip ? (
-                <span className="text-xs font-bold uppercase tracking-wider text-white/60">Ad</span>
-              ) : (
-                <Lock className="h-6 w-6 text-white/60" />
-              )}
+              <span className="text-xs font-bold uppercase tracking-wider text-white/60">Ad</span>
             </div>
             <h2 className="text-lg font-bold text-white">Sponsored Reel</h2>
             <p className="mt-1 text-xs text-white/50 leading-relaxed">
@@ -267,7 +334,7 @@ export function AdController({
           </button>
         )}
 
-        {/* 5-Second Skip Countdown or Active Skip Button */}
+        {/* 5-Second Skip Countdown for Filled Video Ads or Immediate Skip Button */}
         {!canSkip ? (
           <div className="flex flex-col items-center gap-2 rounded-xl bg-black/60 p-3 ring-1 ring-white/10 backdrop-blur-md">
             <div className="flex w-full items-center justify-between text-xs text-white/60">
