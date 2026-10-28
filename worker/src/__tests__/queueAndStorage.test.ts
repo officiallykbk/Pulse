@@ -118,6 +118,34 @@ describe('Oracle Worker Queue and Storage Characterization', () => {
       );
       expect(uploadResult.cdnMasterM3u8Url).toBeUndefined();
     });
+
+    it('stores canonical object paths and bypasses CDN when visibility is age_restricted', async () => {
+      const storageMock = {
+        upload: vi.fn().mockResolvedValue({ error: null }),
+        getPublicUrl: vi.fn(),
+      };
+      mockSupabase.storage.from.mockReturnValue(storageMock);
+
+      const service = new StorageService(
+        config.supabaseUrl,
+        config.supabaseServiceRoleKey,
+        config.storageBucket,
+        config.cdnBaseUrl
+      );
+
+      const uploadResult = await service.uploadTranscodedAssets('vid-restricted-99', tempTestDir, 'age_restricted');
+      expect(storageMock.upload).toHaveBeenCalledWith(
+        'restricted/vid-restricted-99/master.m3u8',
+        expect.any(Buffer),
+        expect.anything()
+      );
+      // Canonical object paths returned; no CDN URLs generated
+      expect(uploadResult.masterM3u8Url).toBe('restricted/vid-restricted-99/master.m3u8');
+      expect(uploadResult.posterUrl).toBe('restricted/vid-restricted-99/poster.webp');
+      expect(uploadResult.cdnMasterM3u8Url).toBeUndefined();
+      expect(uploadResult.cdnPosterUrl).toBeUndefined();
+      expect(storageMock.getPublicUrl).not.toHaveBeenCalled();
+    });
   });
 
   describe('JobQueue', () => {

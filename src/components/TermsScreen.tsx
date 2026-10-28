@@ -39,6 +39,9 @@ export function TermsScreen({ onBack }: TermsScreenProps) {
             <p className="text-xs text-white/70">
               You must be at least 13 years old to use {APP_IDENTITY.name}. You are responsible for safeguarding your credentials and all activities occurring under your account.
             </p>
+            <p className="text-xs text-white/70">
+              Access to content labeled &ldquo;18+ Only&rdquo; requires a separate device-level self-declaration gate without collecting government IDs, birthdates, or personal identity documents.
+            </p>
           </section>
 
           <section className="rounded-card bg-surface-raised p-4 space-y-2">

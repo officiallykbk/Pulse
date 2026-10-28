@@ -33,6 +33,7 @@ export function useVideos() {
       )
       .eq('is_active', true)
       .in('status', ['published', 'ready'])
+      .eq('visibility', 'public')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
 

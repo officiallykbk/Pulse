@@ -51,14 +51,22 @@ export class StorageService {
 
   /**
    * Uploads all transcoded artifacts (master playlist, variant playlists, segments, poster)
-   * to Supabase Storage under `transcoded/<videoId>/`
+   * to Supabase Storage. For age_restricted videos, uploads under `restricted/<videoId>/`
+   * and returns canonical object paths rather than public or CDN URLs.
    */
-  async uploadTranscodedAssets(videoId: string, outputDir: string): Promise<StorageUrls> {
+  async uploadTranscodedAssets(
+    videoId: string,
+    outputDir: string,
+    visibility?: 'public' | 'private' | 'age_restricted'
+  ): Promise<StorageUrls> {
+    const isRestricted = visibility === 'age_restricted';
     const files = await this.collectFilesRecursively(outputDir);
 
     for (const file of files) {
       const relativePath = path.relative(outputDir, file).replace(/\\/g, '/');
-      const storageKey = `transcoded/${videoId}/${relativePath}`;
+      const storageKey = isRestricted
+        ? `restricted/${videoId}/${relativePath}`
+        : `transcoded/${videoId}/${relativePath}`;
       const contentType = this.getContentType(file);
       const fileBuffer = await fs.readFile(file);
 
@@ -75,10 +83,18 @@ export class StorageService {
       }
     }
 
-    // Get public URL for master playlist and poster
-    const masterKey = `transcoded/${videoId}/master.m3u8`;
-    const posterKey = `transcoded/${videoId}/poster.webp`;
+    const masterKey = isRestricted ? `restricted/${videoId}/master.m3u8` : `transcoded/${videoId}/master.m3u8`;
+    const posterKey = isRestricted ? `restricted/${videoId}/poster.webp` : `transcoded/${videoId}/poster.webp`;
 
+    if (isRestricted) {
+      // Store canonical object paths in existing URL text fields for restricted records; do not persist expiring signed URLs
+      return {
+        masterM3u8Url: masterKey,
+        posterUrl: posterKey,
+      };
+    }
+
+    // Get public URL for master playlist and poster
     const { data: masterData } = this.supabase.storage.from(this.bucket).getPublicUrl(masterKey);
     const { data: posterData } = this.supabase.storage.from(this.bucket).getPublicUrl(posterKey);
 

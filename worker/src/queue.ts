@@ -12,6 +12,7 @@ export interface VideoRecord {
   raw_video_url?: string | null;
   status: string;
   attempt_count?: number;
+  visibility?: 'public' | 'private' | 'age_restricted';
 }
 
 export class JobQueue {
@@ -55,7 +56,7 @@ export class JobQueue {
     try {
       const { data: candidate } = await this.supabase
         .from('videos')
-        .select('id, title, video_url, raw_video_url, status, attempt_count')
+        .select('id, title, video_url, raw_video_url, status, attempt_count, visibility')
         .eq('status', 'uploaded')
         .order('created_at', { ascending: true })
         .limit(1)
@@ -74,7 +75,7 @@ export class JobQueue {
         })
         .eq('id', candidate.id)
         .eq('status', 'uploaded')
-        .select('id, title, video_url, raw_video_url, status');
+        .select('id, title, video_url, raw_video_url, status, visibility');
 
       if (claimError || !claimed || claimed.length === 0) {
         // Lost race to another worker
@@ -127,7 +128,7 @@ export class JobQueue {
       const transcodeResult = await this.transcoder.processVideo(sourceFilePath, outputDir);
 
       console.log(`[${this.config.workerId}] Uploading HLS segments and poster to storage...`);
-      const urls = await this.storage.uploadTranscodedAssets(videoId, outputDir);
+      const urls = await this.storage.uploadTranscodedAssets(videoId, outputDir, job.visibility);
 
       const finalMasterUrl = urls.cdnMasterM3u8Url || urls.masterM3u8Url;
       const finalPosterUrl = urls.cdnPosterUrl || urls.posterUrl;

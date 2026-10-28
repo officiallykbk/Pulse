@@ -3,12 +3,14 @@ import { VideoPlayer, type PlayerSlotState } from '@/components/VideoPlayer';
 import { VideoOptionsSheet } from '@/components/VideoOptionsSheet';
 import { CommentsSheet } from '@/components/CommentsSheet';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
+import { AgeGateModal } from '@/components/AgeGateModal';
 import { Bookmark, Heart, Share2, MoreVertical, Volume2, VolumeX, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
 import { useLikes } from '@/hooks/useLikes';
 import { useFollow } from '@/hooks/useFollow';
 import { useSoundState } from '@/hooks/useSoundState';
 import { feedActions } from '@/lib/feedActions';
 import { supabase } from '@/services/supabase';
+import { ageVerificationService } from '@/services/ageVerification';
 import { APP_IDENTITY } from '@/config/appIdentity';
 import type { Video, UserTier } from '@/types';
 import { toast } from 'sonner';
@@ -34,6 +36,51 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   const [savingVideo, setSavingVideo] = useState(false);
   const lastTapRef = useRef(0);
   const viewedRef = useRef(false);
+
+  const isRestricted = video.visibility === 'age_restricted';
+  const [ageVerified, setAgeVerified] = useState(() => ageVerificationService.getSnapshot() === 'verified');
+  const [ageModalOpen, setAgeModalOpen] = useState(false);
+  const [playableUrls, setPlayableUrls] = useState({
+    videoUrl: video.video_url,
+    posterUrl: video.thumbnail_url,
+  });
+
+  useEffect(() => {
+    return ageVerificationService.subscribe(() => {
+      setAgeVerified(ageVerificationService.getSnapshot() === 'verified');
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isRestricted && isActive) {
+      if (ageVerificationService.getSnapshot() === 'unknown') {
+        void ageVerificationService.status().then((status) => {
+          setAgeVerified(status === 'verified');
+        });
+      }
+    }
+  }, [isRestricted, isActive]);
+
+  useEffect(() => {
+    setPlayableUrls({
+      videoUrl: video.video_url,
+      posterUrl: video.thumbnail_url,
+    });
+
+    if (isRestricted && ageVerified) {
+      void fetch(`/api/media/restricted/${video.id}`, { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.video_url) {
+            setPlayableUrls({
+              videoUrl: data.video_url,
+              posterUrl: data.thumbnail_url || video.thumbnail_url,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isRestricted, ageVerified, video.id, video.video_url, video.thumbnail_url]);
 
   useEffect(() => {
     setCommentCount(video.comment_count);
@@ -232,11 +279,29 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
     <div className="absolute inset-0">
       <VideoPlayer
         videoId={video.id}
-        videoUrl={video.video_url}
-        posterUrl={video.thumbnail_url}
-        isActive={isActive}
+        videoUrl={playableUrls.videoUrl}
+        posterUrl={playableUrls.posterUrl}
+        isActive={isActive && (!isRestricted || ageVerified)}
         slotState={slotState}
       />
+
+      {isRestricted && !ageVerified && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-black/85 text-center">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 mb-4">
+            <span className="text-xl font-bold">18+</span>
+          </div>
+          <h3 className="text-lg font-bold text-white mb-2">Age-Restricted Content</h3>
+          <p className="text-xs text-neutral-400 max-w-xs mb-6">
+            This video is marked as 18+ Only. Confirm your age with our privacy-first declaration to watch.
+          </p>
+          <button
+            onClick={() => setAgeModalOpen(true)}
+            className="px-6 py-2.5 rounded-full bg-[#E50914] hover:bg-[#B80710] font-semibold text-white text-sm transition-colors shadow-lg active:scale-95"
+          >
+            Confirm Age (18+)
+          </button>
+        </div>
+      )}
 
       <div className="absolute inset-0 z-10" onClick={handleTap} />
 
@@ -368,6 +433,13 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
         open={commentsOpen}
         onClose={() => setCommentsOpen(false)}
         onCommentCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+      />
+
+      <AgeGateModal
+        open={ageModalOpen}
+        onClose={() => setAgeModalOpen(false)}
+        onVerified={() => setAgeVerified(true)}
+        contentTitle={video.title}
       />
     </div>
   );
