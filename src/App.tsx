@@ -17,7 +17,7 @@ import { SideRail } from '@/components/SideRail';
 import { useAuth } from '@/hooks/useAuth';
 import { useVideos } from '@/hooks/useVideos';
 import { useUserVideos } from '@/hooks/useUserVideos';
-import { createViewingBudget, VIEWING_LIMIT_MINUTES, type ViewingBudget } from '@/lib/viewingBudget';
+import { dailyActivity } from '@/lib/dailyActivity';
 import type { Video } from '@/types';
 import { APP_IDENTITY } from '@/config/appIdentity';
 import { toast } from 'sonner';
@@ -30,7 +30,6 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
-  const [budget, setBudget] = useState<ViewingBudget>(() => ({ remainingMs: 0, exhausted: false, nearLimit: false }));
   const [adLocked, setAdLocked] = useState(false);
   const [feedReady, setFeedReady] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(() =>
@@ -39,23 +38,11 @@ function App() {
       : null
   );
 
-  const budgetRef = useRef(createViewingBudget(tier));
   useEffect(() => {
-    budgetRef.current = createViewingBudget(tier);
-    setBudget(budgetRef.current.snapshot());
-  }, [tier]);
-
-  useEffect(() => {
-    if (tier !== 'anonymous') return;
-    const tracker = budgetRef.current;
-    tracker.start();
-    setBudget(tracker.snapshot());
-    const refresh = setInterval(() => setBudget(tracker.snapshot()), 5000);
-    return () => {
-      tracker.stop();
-      clearInterval(refresh);
-    };
-  }, [tier]);
+    if (view === 'home') {
+      dailyActivity.markActive();
+    }
+  }, [view]);
 
   useEffect(() => {
     void loadVideos(true).finally(() => setFeedReady(true));
@@ -110,7 +97,7 @@ function App() {
       />
 
       <div className="device-column relative flex-1 bg-black">
-      {view === 'home' && !budget.exhausted && (
+      {view === 'home' && (
         <VideoFeed
           videos={videos}
           tier={tier}
@@ -124,35 +111,6 @@ function App() {
           initialVideoId={selectedVideoId}
           shareOrigin={import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin}
         />
-      )}
-
-      {view === 'home' && budget.exhausted && (
-        <div className="flex h-full flex-col items-center justify-center bg-black px-6 pb-24">
-          <h2 className="mb-2 text-xl font-bold text-white">You've used your free viewing time</h2>
-          <p className="mb-2 max-w-sm text-center text-sm leading-relaxed text-white/60">
-            Guests get {VIEWING_LIMIT_MINUTES} minutes of viewing per day. Register to keep watching — it's free.
-          </p>
-          <button
-            onClick={() => setAuthOpen(true)}
-            className="mt-2 flex items-center gap-2 rounded-full bg-accent px-6 py-3 font-semibold text-white transition-colors active:bg-accent-hover"
-          >
-            <LogIn className="h-5 w-5" />
-            Register to Continue
-          </button>
-        </div>
-      )}
-
-      {view === 'home' && !budget.exhausted && budget.nearLimit && (
-        <div
-          className="absolute left-1/2 top-16 z-50 -translate-x-1/2"
-          style={{ animation: 'fadeInDown 0.3s ease-out' }}
-        >
-          <div className="rounded-full bg-black/85 px-4 py-2 backdrop-blur-sm">
-            <span className="text-sm text-white">
-              {Math.ceil(budget.remainingMs / 60000)} minutes of guest viewing left today
-            </span>
-          </div>
-        </div>
       )}
 
       {view === 'search' && (

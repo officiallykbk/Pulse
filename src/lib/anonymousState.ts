@@ -35,6 +35,7 @@ export interface AnonymousRawState {
   version: 1;
   saved: AnonymousSaveEntry[];
   progress: AnonymousProgressEntry[];
+  lastActiveDate?: string;
 }
 
 export interface AnonymousSnapshot {
@@ -210,6 +211,7 @@ export class AnonymousStateManager implements AnonymousStateModule {
         version: 1,
         saved: cappedSaved,
         progress: cappedProgress,
+        lastActiveDate: typeof parsed.lastActiveDate === 'string' ? parsed.lastActiveDate.slice(0, 10) : undefined,
       };
 
       if (stateChanged) {
@@ -359,6 +361,23 @@ export class AnonymousStateManager implements AnonymousStateModule {
 
     this.writeState(state);
     this.notify();
+  }
+
+  markDailyActivity(dateStr?: string): boolean {
+    const today = dateStr || new Date(this.nowFn()).toISOString().slice(0, 10);
+    const state = this.readState();
+    if (state.lastActiveDate === today) {
+      return false;
+    }
+    state.lastActiveDate = today;
+    this.writeState(state);
+    this.notify();
+    return true;
+  }
+
+  getLastActiveDate(): string | null {
+    const state = this.readState();
+    return state.lastActiveDate || null;
   }
 }
 

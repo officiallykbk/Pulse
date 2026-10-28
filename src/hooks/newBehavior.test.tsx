@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useFollow } from '@/hooks/useFollow';
-import { createViewingBudget, VIEWING_LIMIT_MINUTES, type ViewingBudgetTracker } from '@/lib/viewingBudget';
+import { DailyActivityManager } from '@/lib/dailyActivity';
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
@@ -68,39 +68,61 @@ describe('useFollow', () => {
   });
 });
 
-describe('viewingBudget', () => {
+describe('dailyActivity', () => {
+  let simulatedTime: number;
+  let activity: DailyActivityManager;
+
   beforeEach(() => {
     localStorage.clear();
+    simulatedTime = new Date('2026-10-28T12:00:00Z').getTime();
+    activity = new DailyActivityManager(() => simulatedTime);
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+      writable: true,
+    });
   });
 
-  it('starts with the full daily budget', () => {
-    const tracker: ViewingBudgetTracker = createViewingBudget('anonymous');
-    const snap = tracker.snapshot();
-    expect(snap.exhausted).toBe(false);
-    expect(snap.nearLimit).toBe(false);
-    expect(snap.remainingMs).toBe(VIEWING_LIMIT_MINUTES * 60 * 1000);
+  it('marks activity when foreground playback begins', () => {
+    const recorded = activity.markActive();
+    expect(recorded).toBe(true);
+
+    const snap = activity.snapshot();
+    expect(snap.activeToday).toBe(true);
+    expect(snap.lastActiveDate).toBe('2026-10-28');
   });
 
-  it('does not count time for signed-in tiers', () => {
-    const tracker = createViewingBudget('free');
-    tracker.start();
-    tracker.stop();
-    expect(tracker.snapshot().remainingMs).toBe(VIEWING_LIMIT_MINUTES * 60 * 1000);
+  it('records at most once per calendar day (no duplicate writes)', () => {
+    expect(activity.markActive()).toBe(true);
+    // Same day subsequent call is a no-op
+    expect(activity.markActive()).toBe(false);
   });
 
-  it('reports exhaustion once budget is spent', () => {
-    const tracker = createViewingBudget('anonymous');
-    tracker.spend(VIEWING_LIMIT_MINUTES * 60 * 1000);
-    const snap = tracker.snapshot();
-    expect(snap.exhausted).toBe(true);
-    expect(snap.remainingMs).toBe(0);
+  it('suppresses recording when document is in background', () => {
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+      writable: true,
+    });
+
+    const recorded = activity.markActive();
+    expect(recorded).toBe(false);
+
+    const snap = activity.snapshot();
+    expect(snap.activeToday).toBe(false);
   });
 
-  it('warns inside the final warning window', () => {
-    const tracker = createViewingBudget('anonymous');
-    tracker.spend((VIEWING_LIMIT_MINUTES - 5) * 60 * 1000);
-    const snap = tracker.snapshot();
-    expect(snap.nearLimit).toBe(true);
-    expect(snap.exhausted).toBe(false);
+  it('records anew when advancing to next calendar day', () => {
+    activity.markActive();
+
+    // Advance 24 hours to next day
+    simulatedTime += 24 * 60 * 60 * 1000;
+    const snapBefore = activity.snapshot();
+    expect(snapBefore.activeToday).toBe(false);
+
+    expect(activity.markActive()).toBe(true);
+    const snapAfter = activity.snapshot();
+    expect(snapAfter.activeToday).toBe(true);
+    expect(snapAfter.lastActiveDate).toBe('2026-10-29');
   });
 });
