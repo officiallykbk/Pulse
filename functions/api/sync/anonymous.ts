@@ -10,16 +10,21 @@
  * 4. Idempotent upsert into `saved_videos`
  * 5. Monotonic completion and timestamp comparison for `video_watch_progress`
  * 6. Returns per-item acknowledgements
+ * 7. Rate-limited to prevent abuse
  */
 
 import { jsonResponse, errorResponse } from '../../_lib/http';
 import { resolveSession } from '../../_lib/session';
 import { verifyCsrf } from '../../_lib/csrf';
+import { checkRateLimit, getClientIp, buildRateLimitResponse } from '../../_lib/rateLimit';
+import { safeLog, safeError } from '../../_lib/logger';
+import type { KVNamespaceLike } from '../../_lib/ageVerification';
 
 interface Env {
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  RATE_LIMITS?: KVNamespaceLike;
 }
 
 interface IncomingProgress {
@@ -58,6 +63,18 @@ export async function onRequestPost({
     return errorResponse('Authentication required to synchronize anonymous data', 401);
   }
 
+  // Rate limit: 10 sync requests per 60 seconds per user / IP
+  const ip = getClientIp(request);
+  const rateLimit = await checkRateLimit(
+    `sync:anonymous:${session.user.id || ip}`,
+    { maxRequests: 10, windowSeconds: 60 },
+    env.RATE_LIMITS
+  );
+  if (!rateLimit.allowed) {
+    safeLog('sync:anonymous', `Rate limit exceeded for user ${session.user.id}`);
+    return buildRateLimitResponse(rateLimit);
+  }
+
   // 2. CSRF Verification
   const csrfResult = verifyCsrf(request);
   if (!csrfResult.valid) {
@@ -73,57 +90,60 @@ export async function onRequestPost({
   }
 
   if (typeof rawBody !== 'object' || rawBody === null) {
-    return errorResponse('Payload must be an object', 400);
+    return errorResponse('Expected an object body', 400);
   }
 
-  const payload = rawBody as SyncPayload;
+  const body = rawBody as SyncPayload;
+  const rawSavedIds = Array.isArray(body.savedVideoIds) ? body.savedVideoIds : [];
+  const rawProgress = Array.isArray(body.progress) ? body.progress : [];
 
-  // Validate savedVideoIds
-  const validSavedIds: string[] = [];
-  if (Array.isArray(payload.savedVideoIds)) {
-    for (const item of payload.savedVideoIds.slice(0, MAX_SAVED_SYNC)) {
-      if (typeof item === 'string' && item.trim().length > 0) {
-        validSavedIds.push(item.trim().slice(0, 100));
-      }
-    }
-  }
+  // Sanitize and cap saved IDs (strings, max 10)
+  const validSavedIds = rawSavedIds
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .slice(0, MAX_SAVED_SYNC);
 
-  // Validate progress
+  // Sanitize and cap progress items (max 50)
   const validProgress: IncomingProgress[] = [];
-  if (Array.isArray(payload.progress)) {
-    for (const item of payload.progress.slice(0, MAX_PROGRESS_SYNC)) {
-      if (typeof item === 'object' && item !== null) {
-        const p = item as Record<string, unknown>;
-        if (
-          typeof p.videoId === 'string' &&
-          typeof p.positionSeconds === 'number' &&
-          Number.isFinite(p.positionSeconds) &&
-          typeof p.updatedAt === 'string'
-        ) {
-          validProgress.push({
-            videoId: p.videoId.trim().slice(0, 100),
-            positionSeconds: Math.max(0, Math.floor(p.positionSeconds)),
-            completed: Boolean(p.completed),
-            updatedAt: p.updatedAt,
-          });
-        }
+  for (const item of rawProgress.slice(0, MAX_PROGRESS_SYNC)) {
+    if (typeof item === 'object' && item !== null) {
+      const p = item as Record<string, unknown>;
+      if (
+        typeof p.videoId === 'string' &&
+        p.videoId.trim().length > 0 &&
+        typeof p.positionSeconds === 'number' &&
+        !isNaN(p.positionSeconds) &&
+        p.positionSeconds >= 0 &&
+        typeof p.completed === 'boolean'
+      ) {
+        const updatedAt =
+          typeof p.updatedAt === 'string' && !isNaN(Date.parse(p.updatedAt))
+            ? p.updatedAt
+            : new Date().toISOString();
+
+        validProgress.push({
+          videoId: p.videoId.trim(),
+          positionSeconds: Math.floor(p.positionSeconds),
+          completed: p.completed,
+          updatedAt,
+        });
       }
     }
   }
 
   const acknowledgedSavedIds: string[] = [];
   const acknowledgedProgressVideoIds: string[] = [];
+
   const userId = session.user.id;
   const userJwt = session.accessToken;
 
-  // 4. Upsert saved_videos (idempotent, ignore duplicates)
+  // 4. Upsert saved_videos (idempotent, batch-insert via PostgREST)
   if (validSavedIds.length > 0) {
-    const saveRows = validSavedIds.map((videoId) => ({
-      user_id: userId,
-      video_id: videoId,
-    }));
-
     try {
+      const rows = validSavedIds.map((videoId) => ({
+        user_id: userId,
+        video_id: videoId,
+      }));
+
       const endpoint = new URL('/rest/v1/saved_videos', supabaseUrl);
       const res = await fetch(endpoint.toString(), {
         method: 'POST',
@@ -133,24 +153,24 @@ export async function onRequestPost({
           'Content-Type': 'application/json',
           Prefer: 'resolution=ignore-duplicates,return=minimal',
         },
-        body: JSON.stringify(saveRows),
+        body: JSON.stringify(rows),
       });
 
-      if (res.ok) {
+      if (res.ok || res.status === 201 || res.status === 409) {
         acknowledgedSavedIds.push(...validSavedIds);
       }
     } catch (err) {
-      console.error('Failed to sync saved_videos:', err);
+      safeError('sync:anonymous', 'Failed to sync saved_videos', err);
     }
   }
 
-  // 5. Merge watch progress
+  // 5. Monotonic merge for video_watch_progress
   if (validProgress.length > 0) {
     try {
       const videoIds = validProgress.map((p) => p.videoId);
       const queryEndpoint = new URL('/rest/v1/video_watch_progress', supabaseUrl);
       queryEndpoint.searchParams.set('user_id', `eq.${userId}`);
-      queryEndpoint.searchParams.set('video_id', `in.(${videoIds.join(',')})`);
+      queryEndpoint.searchParams.set('video_id', `in.(${videoIds.map((id) => `"${id}"`).join(',')})`);
       queryEndpoint.searchParams.set('select', 'video_id,last_position_seconds,completed,updated_at');
 
       const existingRes = await fetch(queryEndpoint.toString(), {
@@ -160,16 +180,21 @@ export async function onRequestPost({
         },
       });
 
-      const existingRows = existingRes.ok
-        ? ((await existingRes.json()) as Array<{
-            video_id: string;
-            last_position_seconds: number;
-            completed: boolean;
-            updated_at: string;
-          }>)
-        : [];
+      interface ExistingRow {
+        video_id: string;
+        last_position_seconds: number;
+        completed: boolean;
+        updated_at: string;
+      }
 
-      const existingMap = new Map(existingRows.map((r) => [r.video_id, r]));
+      let existingMap = new Map<string, ExistingRow>();
+      if (existingRes.ok) {
+        const rows = (await existingRes.json()) as ExistingRow[];
+        for (const row of rows) {
+          existingMap.set(row.video_id, row);
+        }
+      }
+
       const rowsToUpsert: Array<{
         user_id: string;
         video_id: string;
@@ -180,21 +205,23 @@ export async function onRequestPost({
 
       for (const item of validProgress) {
         const existing = existingMap.get(item.videoId);
-        let finalPos = item.positionSeconds;
+
         let finalCompleted = item.completed;
+        let finalPos = item.positionSeconds;
         let finalUpdatedAt = item.updatedAt;
 
         if (existing) {
-          // Completed status is monotonic
           finalCompleted = existing.completed || item.completed;
 
-          const existingTime = new Date(existing.updated_at).getTime();
-          const incomingTime = new Date(item.updatedAt).getTime();
+          const existingTime = Date.parse(existing.updated_at) || 0;
+          const incomingTime = Date.parse(item.updatedAt) || 0;
 
           if (existingTime > incomingTime) {
-            // Newer server state wins position
             finalPos = existing.last_position_seconds;
             finalUpdatedAt = existing.updated_at;
+          } else {
+            finalPos = item.positionSeconds;
+            finalUpdatedAt = item.updatedAt;
           }
         }
 
@@ -223,9 +250,11 @@ export async function onRequestPost({
         });
       }
     } catch (err) {
-      console.error('Failed to sync video_watch_progress:', err);
+      safeError('sync:anonymous', 'Failed to sync video_watch_progress', err);
     }
   }
+
+  safeLog('sync:anonymous', `Synchronized ${acknowledgedSavedIds.length} saves and ${acknowledgedProgressVideoIds.length} progress items for user ${userId}`);
 
   return jsonResponse(
     {

@@ -1,11 +1,15 @@
 import { verifyCsrf } from '../../_lib/csrf';
 import { errorResponse, jsonResponse } from '../../_lib/http';
 import { resolveSession } from '../../_lib/session';
+import { checkRateLimit, getClientIp, buildRateLimitResponse } from '../../_lib/rateLimit';
+import { safeLog, safeError } from '../../_lib/logger';
+import type { KVNamespaceLike } from '../../_lib/ageVerification';
 
 interface Env {
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  RATE_LIMITS?: KVNamespaceLike;
 }
 
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
@@ -30,6 +34,18 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
   const session = await resolveSession(request, env);
   if (!session.user || !session.accessToken) {
     return errorResponse('Authentication required to upload media', 401);
+  }
+
+  // Rate limit: 20 upload signing requests per 60 seconds per user
+  const ip = getClientIp(request);
+  const rateLimit = await checkRateLimit(
+    `upload:sign:${session.user.id || ip}`,
+    { maxRequests: 20, windowSeconds: 60 },
+    env.RATE_LIMITS
+  );
+  if (!rateLimit.allowed) {
+    safeLog('upload:sign', `Rate limit exceeded for user ${session.user.id}`);
+    return buildRateLimitResponse(rateLimit);
   }
 
   // 2. Verify CSRF & Origin
@@ -120,6 +136,7 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     if (!signRes.ok) {
       // Fallback
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/videos/${objectPath}`;
+      safeLog('upload:sign', `Storage sign URL fallback used for user ${session.user.id}`);
       return jsonResponse({
         uploadUrl: `${supabaseUrl}/storage/v1/object/videos/${objectPath}`,
         path: objectPath,
@@ -135,6 +152,8 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
 
     const publicUrl = `${supabaseUrl}/storage/v1/object/public/videos/${objectPath}`;
 
+    safeLog('upload:sign', `Generated signed upload URL for path: ${objectPath}`);
+
     return jsonResponse(
       {
         uploadUrl,
@@ -146,6 +165,7 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
       session.newCookies
     );
   } catch (err) {
+    safeError('upload:sign', 'Failed to generate signed upload URL', err);
     return errorResponse('Failed to generate signed upload URL', 502);
   }
 }

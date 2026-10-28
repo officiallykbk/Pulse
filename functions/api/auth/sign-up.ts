@@ -2,13 +2,26 @@ import { isSecureContext, buildAuthCookieHeaders } from '../../_lib/cookies';
 import { generateCsrfToken, verifyOrigin } from '../../_lib/csrf';
 import { jsonResponse, errorResponse } from '../../_lib/http';
 import { supabaseSignUp, fetchUserTier } from '../../_lib/supabaseAuth';
+import { checkRateLimit, getClientIp, buildRateLimitResponse } from '../../_lib/rateLimit';
+import { safeLog, safeError } from '../../_lib/logger';
+import type { KVNamespaceLike } from '../../_lib/ageVerification';
 
 interface Env {
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
+  RATE_LIMITS?: KVNamespaceLike;
 }
 
 export async function onRequestPost({ request, env }: { request: Request; env: Env }): Promise<Response> {
+  const ip = getClientIp(request);
+
+  // Rate limit: 5 sign-up attempts per 10 minutes (600s) per IP to stop registration spam
+  const rateLimit = await checkRateLimit(`auth:sign-up:${ip}`, { maxRequests: 5, windowSeconds: 600 }, env.RATE_LIMITS);
+  if (!rateLimit.allowed) {
+    safeLog('auth:sign-up', `Rate limit exceeded for IP: ${ip}`);
+    return buildRateLimitResponse(rateLimit);
+  }
+
   if (!verifyOrigin(request)) {
     return errorResponse('Invalid origin', 403);
   }
@@ -40,11 +53,13 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
 
   const result = await supabaseSignUp(supabaseUrl, anonKey, email, password);
   if ('error' in result) {
+    safeError('auth:sign-up', `Failed sign-up attempt for email: ${email}`, { error: result.error });
     return errorResponse(result.error, result.status || 400);
   }
 
   // If email confirmation is required, tokens may be empty
   if (!result.tokens.accessToken) {
+    safeLog('auth:sign-up', `User registered, confirmation pending: ${result.user.id}`);
     return jsonResponse({
       user: result.user,
       tier: 'anonymous',
@@ -69,6 +84,8 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     result.tokens.accessToken,
     result.user.id
   );
+
+  safeLog('auth:sign-up', `User registered and session created: ${result.user.id}`);
 
   return jsonResponse(
     {

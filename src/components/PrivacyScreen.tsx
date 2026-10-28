@@ -1,4 +1,4 @@
-import { ArrowLeft, Shield, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Shield, CheckCircle2, Lock, Clock, EyeOff, RefreshCw } from 'lucide-react';
 import { APP_IDENTITY } from '@/config/appIdentity';
 
 interface PrivacyScreenProps {
@@ -27,49 +27,106 @@ export function PrivacyScreen({ onBack }: PrivacyScreenProps) {
           <div className="rounded-card bg-surface-raised p-4">
             <div className="flex items-center gap-2 mb-2 text-accent font-semibold">
               <Shield className="h-4 w-4" />
-              <span>Your Privacy Matters</span>
+              <span>Trust-First, Privacy-First Architecture</span>
             </div>
             <p className="text-xs text-white/60">
-              Last updated: October 2026. This policy explains how {APP_IDENTITY.name} collects, protects, and gives you control over your personal data.
+              Last updated: October 2026. This policy explains how {APP_IDENTITY.name} protects your privacy, minimizes data collection, and gives you total control over your digital footprint.
             </p>
           </div>
 
           <section className="rounded-card bg-surface-raised p-4 space-y-2">
-            <h2 className="font-semibold text-white text-base">1. Information We Collect</h2>
+            <div className="flex items-center gap-2 font-semibold text-white text-base">
+              <Clock className="h-4 w-4 text-accent" />
+              <h2>1. Guest Browsing & 24-Hour Local Retention</h2>
+            </div>
             <p className="text-xs text-white/70">
-              - <strong>Account details:</strong> Email address and authentication identifiers when you register.
+              You can explore and watch videos on {APP_IDENTITY.name} without an account. When browsing as a guest:
             </p>
             <p className="text-xs text-white/70">
-              - <strong>Profile & Content:</strong> Display name, bio, avatar, and videos uploaded to the platform.
+              - <strong>Local Storage Only:</strong> Your saved videos and playback progress are stored strictly on your device.
             </p>
             <p className="text-xs text-white/70">
-              - <strong>Usage & Telemetry:</strong> Aggregated view counts, likes, and comments needed to operate the feed.
+              - <strong>24-Hour Expiration:</strong> All guest saves and progress automatically expire and are purged from your device 24 hours after being recorded.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Zero Surveillance:</strong> We do not run background engagement timers, cross-site trackers, or guest surveillance scripts.
             </p>
           </section>
 
           <section className="rounded-card bg-surface-raised p-4 space-y-2">
-            <h2 className="font-semibold text-white text-base">2. Payment Data</h2>
+            <div className="flex items-center gap-2 font-semibold text-white text-base">
+              <EyeOff className="h-4 w-4 text-accent" />
+              <h2>2. Zero-PII Age Verification</h2>
+            </div>
             <p className="text-xs text-white/70">
-              We never store your credit card numbers or Mobile Money PINs. Payment transactions are processed directly by certified third-party payment providers (Moolre, Paystack, Stripe).
+              To view age-restricted culture and mature creative content:
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Zero Personal Information:</strong> We do not collect your identity cards, birth date, name, or phone number.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Cryptographic Declaration:</strong> Confirming you are 18+ generates an opaque, random 32-byte affirmation token stored in an encrypted HttpOnly cookie for 30 days.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Private Segregated Media:</strong> Restricted videos are kept in private, access-controlled storage delivered via short-lived signed URLs.
             </p>
           </section>
 
           <section className="rounded-card bg-surface-raised p-4 space-y-2">
-            <h2 className="font-semibold text-white text-base">3. Data Export & Account Deletion</h2>
+            <div className="flex items-center gap-2 font-semibold text-white text-base">
+              <RefreshCw className="h-4 w-4 text-accent" />
+              <h2>3. Seamless Account Synchronization</h2>
+            </div>
             <p className="text-xs text-white/70">
-              Under Ghana Data Protection Act 2012 (Act 843) and international privacy frameworks, you have full ownership of your data:
+              When you decide to create an account or sign in:
             </p>
             <p className="text-xs text-white/70">
-              - <strong>Export:</strong> Download a full machine-readable JSON copy of your profile, videos, likes, and comments from Settings.
+              - <strong>Automatic Sync:</strong> Your existing guest saves and progress items are seamlessly synchronized to your private account.
             </p>
             <p className="text-xs text-white/70">
-              - <strong>Delete:</strong> Permanently erase your profile, uploaded videos, and social history instantly from Settings.
+              - <strong>Instant Local Purge:</strong> Once synced, guest data is cleared from your local storage to prevent data lingering on shared devices.
+            </p>
+          </section>
+
+          <section className="rounded-card bg-surface-raised p-4 space-y-2">
+            <div className="flex items-center gap-2 font-semibold text-white text-base">
+              <Lock className="h-4 w-4 text-accent" />
+              <h2>4. Information We Collect For Registered Accounts</h2>
+            </div>
+            <p className="text-xs text-white/70">
+              - <strong>Account details:</strong> Email address and authentication credentials. Session tokens are held exclusively in secure HttpOnly cookies and never exposed to browser scripts.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Profile & Content:</strong> Display name, bio, avatar, and videos you choose to upload.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Aggregated Telemetry:</strong> Public view counts, likes, and comments necessary to operate community feeds.
+            </p>
+          </section>
+
+          <section className="rounded-card bg-surface-raised p-4 space-y-2">
+            <h2 className="font-semibold text-white text-base">5. Payment Security</h2>
+            <p className="text-xs text-white/70">
+              We never store or view your credit card numbers or Mobile Money PINs. Transactions are processed directly by certified third-party payment gateways (Moolre, Paystack, Stripe) subject to strict PCI-DSS compliance.
+            </p>
+          </section>
+
+          <section className="rounded-card bg-surface-raised p-4 space-y-2">
+            <h2 className="font-semibold text-white text-base">6. Your Rights (Ghana Data Protection Act 2012)</h2>
+            <p className="text-xs text-white/70">
+              In accordance with Ghana Act 843 and international standards, you have absolute ownership of your data:
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Machine-Readable Export:</strong> Download a full JSON archive of your profile, uploads, likes, and comments directly in Settings.
+            </p>
+            <p className="text-xs text-white/70">
+              - <strong>Permanent Deletion:</strong> Instantly and irreversibly erase your account, uploaded media, and activity records in Settings.
             </p>
           </section>
 
           <div className="p-4 flex items-center gap-2 text-xs text-white/50">
             <CheckCircle2 className="h-4 w-4 text-accent" />
-            <span>Privacy inquiries: {APP_IDENTITY.supportEmail}</span>
+            <span>Data Protection Officer: {APP_IDENTITY.supportEmail}</span>
           </div>
         </div>
       </div>

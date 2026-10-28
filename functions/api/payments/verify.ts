@@ -1,6 +1,7 @@
 import { verifyCsrf } from '../../_lib/csrf';
 import { errorResponse, jsonResponse } from '../../_lib/http';
 import { resolveSession } from '../../_lib/session';
+import { safeLog, safeError } from '../../_lib/logger';
 
 interface Env {
   SUPABASE_URL?: string;
@@ -43,6 +44,8 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     headers.set('apikey', anonKey);
     headers.set('Authorization', `Bearer ${session.accessToken}`);
 
+    safeLog('payments:verify', `Forwarding payment verification for user ${session.user.id}`);
+
     const upstreamRes = await fetch(edgeEndpoint.toString(), {
       method: 'POST',
       headers,
@@ -55,10 +58,13 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
       const errorMsg = typeof body.error === 'string'
         ? body.error
         : `Payment verification failed (${upstreamRes.status})`;
+      safeError('payments:verify', `Upstream payment verification rejected for user ${session.user.id}`, { status: upstreamRes.status });
       return errorResponse(errorMsg, upstreamRes.status, {}, session.newCookies);
     }
 
-    // 5. Return sanitized response (only payment status / checkout fields, NO tokens)
+    safeLog('payments:verify', `Payment verified successfully for user ${session.user.id}`);
+
+    // 5. Return sanitized response (only payment status / checkout fields, NO tokens or credentials)
     return jsonResponse(
       {
         ok: body.success === true || body.ok === true || !!body.url,
@@ -73,6 +79,7 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
       session.newCookies
     );
   } catch (err) {
+    safeError('payments:verify', 'Payment processing failed unexpectedly', err);
     return errorResponse('Payment processing failed. Please try again.', 502);
   }
 }

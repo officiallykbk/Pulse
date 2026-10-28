@@ -10,6 +10,7 @@
  * 4. Token persisted in Cloudflare KV with 30-day (2,592,000s) TTL
  * 5. HttpOnly, SameSite=Strict 'age_verified' cookie set
  * 6. Zero PII collected or logged
+ * 7. Rate-limited to prevent abuse
  */
 
 import { jsonResponse, errorResponse } from '../../_lib/http';
@@ -21,9 +22,12 @@ import {
   buildAgeCookieHeader,
   type KVNamespaceLike,
 } from '../../_lib/ageVerification';
+import { checkRateLimit, getClientIp, buildRateLimitResponse } from '../../_lib/rateLimit';
+import { safeLog } from '../../_lib/logger';
 
 interface Env {
   AGE_VERIFICATIONS?: KVNamespaceLike;
+  RATE_LIMITS?: KVNamespaceLike;
 }
 
 export async function onRequestPost({
@@ -33,6 +37,19 @@ export async function onRequestPost({
   request: Request;
   env: Env;
 }): Promise<Response> {
+  const ip = getClientIp(request);
+
+  // Rate limit: 10 requests per 60 seconds per IP
+  const rateLimit = await checkRateLimit(
+    `age:verify:${ip}`,
+    { maxRequests: 10, windowSeconds: 60 },
+    env.RATE_LIMITS || env.AGE_VERIFICATIONS
+  );
+  if (!rateLimit.allowed) {
+    safeLog('age:verify', `Rate limit exceeded for IP: ${ip}`);
+    return buildRateLimitResponse(rateLimit);
+  }
+
   // 1. Validate Origin / Referer
   if (!verifyOrigin(request)) {
     return errorResponse('Invalid origin for age verification', 403);
@@ -61,6 +78,8 @@ export async function onRequestPost({
   // 4. Set HttpOnly, SameSite=Strict cookie
   const isSecure = isSecureContext(request);
   const cookieHeader = buildAgeCookieHeader(token, isSecure);
+
+  safeLog('age:verify', 'Age affirmation recorded successfully (zero PII collected)');
 
   return jsonResponse(
     { verified: true },
