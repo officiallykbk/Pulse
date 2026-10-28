@@ -3,6 +3,11 @@ import { Search, X, ArrowLeft, Eye, Heart } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import type { Video } from '@/types';
 
+interface SearchMatch {
+  id: string;
+  relevance: number;
+}
+
 interface SearchScreenProps {
   onBack: () => void;
   onPlayVideo: (video: Video) => void;
@@ -13,34 +18,52 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
   const [results, setResults] = useState<Video[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const performSearch = useCallback(async (q: string, signal: AbortSignal) => {
     const trimmed = q.trim().replace(/[%_(),]/g, ' ').trim();
     if (!trimmed) {
       setResults([]);
       setSearched(false);
+      setLoading(false);
       return;
     }
     setLoading(true);
     setSearched(true);
+    setSearchError(false);
 
-    const escaped = trimmed.replace(/'/g, "''");
-    const { data, error } = await supabase
-      .from('videos')
-      .select(
-        'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at'
-      )
-      .eq('is_active', true)
-      .or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%`)
-      .order('created_at', { ascending: false })
-      .limit(30)
-      .abortSignal(signal);
+    try {
+      const { data: rawMatches, error } = await supabase
+        .rpc('search_public_videos', { search_query: trimmed, result_limit: 30 })
+        .abortSignal(signal);
 
-    if (signal.aborted) return;
-    if (!error && data) {
-      setResults(data);
+      if (signal.aborted) return;
+      if (error) throw error;
+      const matches = (rawMatches ?? []) as SearchMatch[];
+      if (!matches?.length) {
+        setResults([]);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('videos')
+        .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at')
+        .in('id', matches.map((match) => match.id))
+        .eq('is_active', true)
+        .in('status', ['published', 'ready'])
+        .eq('visibility', 'public')
+        .abortSignal(signal);
+      if (signal.aborted) return;
+      const videosById = new Map((data ?? []).map((video) => [video.id, video]));
+      setResults(matches.map((match) => videosById.get(match.id)).filter((video): video is NonNullable<typeof video> => Boolean(video)));
+    } catch {
+      if (!signal.aborted) {
+        setResults([]);
+        setSearchError(true);
+      }
+    } finally {
+      if (!signal.aborted) setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -51,6 +74,8 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
       } else {
         setResults([]);
         setSearched(false);
+        setSearchError(false);
+        setLoading(false);
       }
     }, 300);
     return () => {
@@ -93,6 +118,7 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
                 setQuery('');
                 setResults([]);
                 setSearched(false);
+                setSearchError(false);
               }}
               className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10"
             >
@@ -109,7 +135,7 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
 
         {!loading && searched && results.length === 0 && (
           <div className="py-12 text-center">
-            <p className="text-sm text-white/50">No videos found for "{query}"</p>
+            <p className="text-sm text-white/50">{searchError ? 'Search is temporarily unavailable. Try again.' : `No videos found for "${query}"`}</p>
           </div>
         )}
 
@@ -159,7 +185,7 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
         {!loading && !searched && (
           <div className="py-12 text-center">
             <Search className="mx-auto mb-3 h-10 w-10 text-white/15" />
-            <p className="text-sm text-white/30">Search for videos by title or description</p>
+            <p className="text-sm text-white/30">Search titles, descriptions, and tags</p>
           </div>
         )}
       </div>
