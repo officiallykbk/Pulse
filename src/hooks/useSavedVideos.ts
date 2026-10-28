@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/services/supabase';
+import { anonymousState } from '@/lib/anonymousState';
 import type { Video } from '@/types';
 
 const VIDEO_SELECT = 'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at';
@@ -10,9 +11,35 @@ export function useSavedVideos(userId: string | null) {
 
   const refresh = useCallback(async () => {
     if (!userId) {
-      setSavedVideos([]);
+      // Anonymous user: retrieve local 24-hour saved IDs
+      const localIds = anonymousState.snapshot().savedIds;
+      if (!localIds.length) {
+        setSavedVideos([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const { data: videos } = await supabase
+          .from('videos')
+          .select(VIDEO_SELECT)
+          .in('id', localIds)
+          .eq('is_active', true)
+          .in('status', ['published', 'ready'])
+          .eq('visibility', 'public');
+
+        const videosById = new Map<string, Video>((videos ?? []).map((video) => [video.id, video as Video]));
+        setSavedVideos(localIds.flatMap((id) => {
+          const video = videosById.get(id);
+          return video ? [video] : [];
+        }));
+      } catch {
+        setSavedVideos([]);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
+
     setLoading(true);
     try {
       const { data: savedRows, error } = await supabase
@@ -47,7 +74,14 @@ export function useSavedVideos(userId: string | null) {
     }
   }, [userId]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    if (!userId) {
+      return anonymousState.subscribe(() => {
+        void refresh();
+      });
+    }
+  }, [refresh, userId]);
 
   return { savedVideos, loading, refresh };
 }

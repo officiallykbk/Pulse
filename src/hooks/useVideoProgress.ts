@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { supabase } from '@/services/supabase';
 import { loadAppSettings } from '@/lib/settings';
+import { anonymousState } from '@/lib/anonymousState';
 
 const RESUME_KEY = 'pulse:resume-position:';
 const RESUME_THRESHOLD_SECONDS = 8;
@@ -59,9 +60,14 @@ export function useVideoProgress(
 
     const persistLocalPosition = (position: number, completed: boolean) => {
       try {
-        const key = localKey(videoId, userIdRef.current);
-        if (completed || position < RESUME_THRESHOLD_SECONDS) localStorage.removeItem(key);
-        else localStorage.setItem(key, String(Math.floor(position)));
+        if (!userIdRef.current) {
+          // Anonymous viewing -> record in TTL-limited anonymousState module
+          anonymousState.recordProgress(videoId, position, completed);
+        } else {
+          const key = localKey(videoId, userIdRef.current);
+          if (completed || position < RESUME_THRESHOLD_SECONDS) localStorage.removeItem(key);
+          else localStorage.setItem(key, String(Math.floor(position)));
+        }
         localStorage.removeItem(legacyLocalKey(videoId));
       } catch { /* Storage may be unavailable. */ }
     };
@@ -177,14 +183,22 @@ export function useVideoProgress(
         // Use the local fallback below.
       }
       if (!resume) {
-        try {
-          resume = Number(
-            localStorage.getItem(localKey(videoId, userIdRef.current))
-            ?? localStorage.getItem(legacyLocalKey(videoId))
-            ?? 0
-          );
-        } catch {
-          // Local storage may be unavailable.
+        if (!userIdRef.current) {
+          const anon = anonymousState.getProgress(videoId);
+          if (anon && !anon.completed && anon.positionSeconds >= RESUME_THRESHOLD_SECONDS) {
+            resume = anon.positionSeconds;
+          }
+        }
+        if (!resume) {
+          try {
+            resume = Number(
+              localStorage.getItem(localKey(videoId, userIdRef.current))
+              ?? localStorage.getItem(legacyLocalKey(videoId))
+              ?? 0
+            );
+          } catch {
+            // Local storage may be unavailable.
+          }
         }
       }
       if (!alive) return;

@@ -4,6 +4,9 @@
  * Never stores or returns token material in JavaScript.
  */
 
+import { pruneLegacyKeys } from '@/lib/ttlStorage';
+import { uiSession } from '@/lib/uiSessionState';
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -169,6 +172,7 @@ class ProductionSessionService implements SessionModule {
       this.updateSnapshot({ loading: true, error: null });
 
       try {
+        pruneLegacyKeys();
         // 1. Check for cookie-based session first
         const res = await fetch('/api/auth/session', {
           method: 'GET',
@@ -342,6 +346,8 @@ class ProductionSessionService implements SessionModule {
       // Best-effort sign-out
     } finally {
       this.csrfToken = null;
+      pruneLegacyKeys();
+      uiSession.clear();
       this.updateSnapshot({
         user: null,
         tier: 'anonymous',

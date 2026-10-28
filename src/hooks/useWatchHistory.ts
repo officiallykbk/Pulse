@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/services/supabase';
+import { anonymousState } from '@/lib/anonymousState';
 import type { Video } from '@/types';
 
 export interface WatchHistoryItem {
@@ -17,9 +18,47 @@ export function useWatchHistory(userId: string | null) {
 
   const refresh = useCallback(async () => {
     if (!userId) {
-      setHistory([]);
+      // Anonymous user: read from local 24-hour TTL history
+      const localProgress = anonymousState.snapshot().progress;
+      if (!localProgress.length) {
+        setHistory([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const ids = localProgress.map((p) => p.videoId);
+        const { data: videos } = await supabase
+          .from('videos')
+          .select(VIDEO_SELECT)
+          .in('id', ids)
+          .eq('is_active', true)
+          .in('status', ['published', 'ready'])
+          .eq('visibility', 'public');
+
+        const videoMap = new Map((videos ?? []).map((video) => [video.id, video as Video]));
+        setHistory(
+          localProgress.flatMap((p) => {
+            const video = videoMap.get(p.videoId);
+            return video
+              ? [
+                  {
+                    video,
+                    positionSeconds: p.positionSeconds,
+                    completed: p.completed,
+                    updatedAt: p.updatedAt,
+                  },
+                ]
+              : [];
+          })
+        );
+      } catch {
+        setHistory([]);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
+
     setLoading(true);
     try {
       const { data: rows, error } = await supabase
@@ -33,18 +72,29 @@ export function useWatchHistory(userId: string | null) {
         return;
       }
       const ids = rows.map((row) => row.video_id);
-      const { data: videos } = await supabase.from('videos').select(VIDEO_SELECT)
-        .in('id', ids).eq('is_active', true).in('status', ['published', 'ready']).eq('visibility', 'public');
+      const { data: videos } = await supabase
+        .from('videos')
+        .select(VIDEO_SELECT)
+        .in('id', ids)
+        .eq('is_active', true)
+        .in('status', ['published', 'ready'])
+        .eq('visibility', 'public');
       const videoMap = new Map((videos ?? []).map((video) => [video.id, video]));
-      setHistory(rows.flatMap((row) => {
-        const video = videoMap.get(row.video_id);
-        return video ? [{
-          video,
-          positionSeconds: Number(row.last_position_seconds) || 0,
-          completed: Boolean(row.completed),
-          updatedAt: row.updated_at,
-        }] : [];
-      }));
+      setHistory(
+        rows.flatMap((row) => {
+          const video = videoMap.get(row.video_id);
+          return video
+            ? [
+                {
+                  video,
+                  positionSeconds: Number(row.last_position_seconds) || 0,
+                  completed: Boolean(row.completed),
+                  updatedAt: row.updated_at,
+                },
+              ]
+            : [];
+        })
+      );
     } catch {
       setHistory([]);
     } finally {
@@ -53,12 +103,24 @@ export function useWatchHistory(userId: string | null) {
   }, [userId]);
 
   const clearHistory = useCallback(async () => {
-    if (!userId) return { error: 'Sign in to manage watch history.' };
+    if (!userId) {
+      anonymousState.clearHistory();
+      setHistory([]);
+      return { error: null };
+    }
     const { error } = await supabase.from('video_watch_progress').delete().eq('user_id', userId);
     if (!error) setHistory([]);
     return { error: error?.message ?? null };
   }, [userId]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    if (!userId) {
+      return anonymousState.subscribe(() => {
+        void refresh();
+      });
+    }
+  }, [refresh, userId]);
+
   return { history, loading, refresh, clearHistory };
 }

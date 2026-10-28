@@ -11,6 +11,7 @@ import { useSoundState } from '@/hooks/useSoundState';
 import { feedActions } from '@/lib/feedActions';
 import { supabase } from '@/services/supabase';
 import { ageVerificationService } from '@/services/ageVerification';
+import { anonymousState } from '@/lib/anonymousState';
 import { APP_IDENTITY } from '@/config/appIdentity';
 import type { Video, UserTier } from '@/types';
 import { toast } from 'sonner';
@@ -88,8 +89,18 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
 
   useEffect(() => {
     let active = true;
+    if (!isActive) return () => { active = false; };
+    if (tier === 'anonymous') {
+      setSaved(anonymousState.isSaved(video.id));
+      const unsubscribe = anonymousState.subscribe(() => {
+        if (active) setSaved(anonymousState.isSaved(video.id));
+      });
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    }
     setSaved(false);
-    if (!isActive || tier === 'anonymous') return () => { active = false; };
     void supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
       const { data } = await supabase.from('saved_videos')
@@ -101,7 +112,13 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
 
   const handleSaveVideo = useCallback(async () => {
     if (tier === 'anonymous') {
-      onRequireAuth();
+      const res = anonymousState.toggleSaved(video.id);
+      if (res.limitReached) {
+        onRequireAuth();
+        return;
+      }
+      setSaved(res.saved);
+      toast(res.saved ? 'Saved for 24h on this device' : 'Removed from Saved');
       return;
     }
     if (savingVideo) return;

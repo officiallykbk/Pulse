@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { useSoundState, getIsMuted, setIsMuted } from '@/hooks/useSoundState';
 import { VideoCard } from '@/components/VideoCard';
 import { makeVideo } from '@/test/helpers';
+import { anonymousState } from '@/lib/anonymousState';
 
 const supabaseState = vi.hoisted(() => ({ saved: false }));
 
@@ -105,10 +106,27 @@ describe('Sound & Mute State System', () => {
     expect(await screen.findByRole('button', { name: 'Remove from Saved' })).toBeInTheDocument();
   });
 
-  it('requires authentication before a guest can save a video', async () => {
+  it('lets a guest save a video locally without forcing signup', async () => {
+    anonymousState.clearAll();
     const user = userEvent.setup();
     const onRequireAuth = vi.fn();
-    render(<VideoCard video={makeVideo()} isActive tier="anonymous" onRequireAuth={onRequireAuth} />);
+    render(<VideoCard video={makeVideo({ id: 'v-guest-1' })} isActive tier="anonymous" onRequireAuth={onRequireAuth} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Save video' }));
+    expect(onRequireAuth).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Remove from Saved' })).toBeInTheDocument();
+  });
+
+  it('requires authentication when a guest reaches the 5-save limit', async () => {
+    anonymousState.clearAll();
+    const user = userEvent.setup();
+    const onRequireAuth = vi.fn();
+    // Fill up 5 saves
+    for (let i = 1; i <= 5; i++) {
+      anonymousState.toggleSaved(`fill-${i}`);
+    }
+
+    render(<VideoCard video={makeVideo({ id: 'v-guest-overflow' })} isActive tier="anonymous" onRequireAuth={onRequireAuth} />);
 
     await user.click(await screen.findByRole('button', { name: 'Save video' }));
     expect(onRequireAuth).toHaveBeenCalledOnce();
