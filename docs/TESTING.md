@@ -13,7 +13,7 @@ Runner: **Vitest 3** (jsdom environment) + **Testing Library**.
 Config: `vitest.config.ts` (separate from the Vite build config). Setup file:
 `src/test/setup.ts` (jest-dom matchers, cleanup per test, jsdom shims).
 
-## Test map
+## Selected test map
 
 | File | Covers | Count |
 |---|---|---|
@@ -22,11 +22,13 @@ Config: `vitest.config.ts` (separate from the Vite build config). Setup file:
 | `src/services/verifypayment.test.ts` | Edge function: CORS preflight, method/auth/reference validation, Paystack-not-configured, valid payment grants Pro, wrong amount/currency/status rejected, idempotency per reference, insert-failure handling, 30-day expiry written | 15 |
 | `src/hooks/useVideos.test.ts` | Feed pagination: first page, offset append without duplicates, exhausted feed, empty feed, error propagation; profile content incl. liked-video ordering | 8 |
 | `src/hooks/useAuth.test.ts` | Tier detection: anonymous / free / pro / expired-subscription fallback, sign-out, valid tier values | 6 |
-| `src/components/settings.test.ts` | Settings persistence: defaults, round-trip, merge-over-defaults, corrupted storage | 4 |
+| `src/components/settings.test.ts` | Settings persistence: defaults, round-trip, merge-over-defaults, corrupted storage | 5 |
 | `src/components/screens.test.tsx` | SettingsScreen (toggles persist, delete confirmation, about links), SupportScreen (submission writes to DB, FAQ accordion, disabled send), ProUpgradeModal (pricing, closed state), VideoOptionsSheet (report reason picker, submit, back-out) | 16 |
 | `src/components/editProfile.test.tsx` | Profile editing: load existing values, save name/bio, taken-name blocking, avatar type rejection, avatar upload path + saved URL | 6 |
 
-**Total: 77 tests.**
+Additional coverage includes search relevance, private Saved lists, playback continuity, low-volume viewing summaries, share-route metadata and exact-video handoff, moderation, ads, comments, upload validation, and payment providers.
+
+**Current total: 175 tests across 28 files.**
 
 ## Key patterns
 

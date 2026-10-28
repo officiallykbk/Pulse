@@ -41,6 +41,14 @@ Every screen and journey as shipped. No dead ends: every button leads somewhere.
 
 1. Comment button (or count) → bottom sheet with the thread
 2. Type + send → appears instantly; own comments show a delete button
+
+## Discovery, saves, and continuity
+
+- Search indexes video title, description, and extracted tags; matching public videos are ranked by full-text relevance. Transcripts stay out of scope until a trusted source and review workflow exist.
+- Signed-in users can save/unsave videos in one private Saved list available from Profile. Offline downloads are not part of this milestone.
+- Signed-in Watch History stores sparse resume positions; guests receive a local-device fallback. Completed videos restart from the beginning. Resume is a continuity feature, not a promise of lower data use, because seeking may fetch media segments.
+- Watch-time/completion/skip signals are reduced to one aggregate viewing summary per session, covered by a 90-day cleanup policy, and sent only for signed-in users who opt in. The feed remains chronological and does not use these signals for ranking yet.
+- Shared `/watch/<video-id>` links render social metadata at the edge, then open the exact video in the Pulse web app with a rendered button fallback. Native app deep linking is future work.
 3. Guests: prompted to register before the sheet opens
 
 ## 5. Profile (registered)

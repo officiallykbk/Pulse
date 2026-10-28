@@ -73,6 +73,18 @@ Inserts/deletes adjust `videos.comment_count` via RPCs.
 Policies: authenticated INSERT own, SELECT own. No client UPDATE/DELETE —
 moderation is a future server-side flow.
 
+### Discovery and playback continuity (20261028000000)
+
+- `videos.tags` stores hashtags extracted from upload title/description. A generated `search_document` GIN index covers title, description, and tags and powers `search_public_videos`, which returns only public, published videos ordered by relevance. Transcript indexing is deferred until there is a trusted transcript source and review path.
+- `saved_videos` stores a private per-user Saved list; RLS restricts reads/writes to the owner.
+- `video_watch_progress` stores only an owner's last position and completion state; it does not accumulate watch time. The signed-in `save_video_watch_progress` RPC validates public-video visibility, while a sparse local fallback supports continuity for guests and network failures. Resume does not guarantee data savings because seeking may fetch new media segments.
+- `video_viewing_insights` stores one aggregate watch/completion/skip summary per viewing session only for signed-in accounts that opt in. Consent is `profiles.viewing_insights`, defaults to false, and is checked by the write RPC. Rows older than 90 days are purged opportunistically, and these signals are not yet used to rank the feed.
+- Export and account cleanup include saved items, progress, and insights.
+
+### Social sharing
+
+Cloudflare Pages Function `/watch/:videoId` fetches only public video metadata using the Supabase anon key and emits per-video Open Graph/Twitter image metadata. No service-role key is used. Crawlers receive the metadata while browsers redirect to `/?v=<id>`; the rendered page keeps a button fallback for disabled JavaScript or edge failures. Native installed-app App Links/Universal Links require a native app and verified domain configuration that this web-only repository does not contain.
+
 ### `feedback`
 (id, user_id nullable, email nullable, category general/bug/feature, message,
 status, created_at). Anyone (anon included) can INSERT; users SELECT their own.
