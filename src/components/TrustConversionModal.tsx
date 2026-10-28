@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { Bookmark, Clock, Upload, Sparkles, X } from 'lucide-react';
+import { trackFunnelEvent } from '@/lib/funnelTelemetry';
 
 export type AuthIntent = 'save-limit' | 'ttl-expired' | 'upload' | 'default';
 
@@ -63,13 +65,25 @@ export function TrustConversionModal({
   onClose,
   onContinueToAuth,
 }: TrustConversionModalProps) {
+  useEffect(() => {
+    if (open) {
+      trackFunnelEvent('auth_modal_shown', { intent });
+    }
+  }, [open, intent]);
+
   if (!open) return null;
 
   const content = INTENT_MAP[intent] || INTENT_MAP.default;
   const IconComponent = content.icon;
 
   const handleAction = () => {
+    trackFunnelEvent('signup_started', { intent });
     onContinueToAuth(intent);
+    onClose();
+  };
+
+  const handleClose = () => {
+    trackFunnelEvent('auth_modal_dismissed', { intent });
     onClose();
   };
 
@@ -83,7 +97,7 @@ export function TrustConversionModal({
       <div className="relative w-full max-w-sm bg-[#121212] border border-neutral-800 rounded-2xl p-6 shadow-2xl text-white">
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           aria-label="Close"
           className="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors"
         >
@@ -125,7 +139,7 @@ export function TrustConversionModal({
             {content.actionText}
           </button>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-full py-2.5 px-4 rounded-xl font-medium bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs transition-colors"
           >
             Not Now

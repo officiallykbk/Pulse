@@ -18,6 +18,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useVideos } from '@/hooks/useVideos';
 import { useUserVideos } from '@/hooks/useUserVideos';
 import { dailyActivity } from '@/lib/dailyActivity';
+import { trackGuestSessionStartOnce } from '@/lib/funnelTelemetry';
 import type { Video } from '@/types';
 import { APP_IDENTITY } from '@/config/appIdentity';
 import { toast } from 'sonner';
@@ -41,8 +42,11 @@ function App() {
   useEffect(() => {
     if (view === 'home') {
       dailyActivity.markActive();
+      if (tier === 'anonymous') {
+        trackGuestSessionStartOnce();
+      }
     }
-  }, [view]);
+  }, [view, tier]);
 
   useEffect(() => {
     void loadVideos(true).finally(() => setFeedReady(true));

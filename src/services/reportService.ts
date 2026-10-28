@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/services/supabase';
+import { trackFunnelEvent } from '@/lib/funnelTelemetry';
 
 export interface ReportPayload {
   videoId?: string | null;
@@ -41,6 +42,7 @@ export async function submitReport(payload: ReportPayload): Promise<ReportResult
         reportId?: string;
         message?: string;
       };
+      trackFunnelEvent('report_submitted', { target: payload.videoId ? 'video' : 'user' });
       return {
         success: true,
         reportId: data.reportId,

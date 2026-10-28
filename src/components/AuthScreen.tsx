@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Mail, Lock } from 'lucide-react';
+import { trackFunnelEvent } from '@/lib/funnelTelemetry';
 
 interface AuthScreenProps {
   open: boolean;
@@ -21,12 +22,18 @@ export function AuthScreen({ open, onClose, onSignIn, onSignUp }: AuthScreenProp
     e.preventDefault();
     setLoading(true);
     setError(null);
+    if (mode === 'signup') {
+      trackFunnelEvent('signup_started');
+    }
     const fn = mode === 'signin' ? onSignIn : onSignUp;
     const { error: err } = await fn(email, password);
     setLoading(false);
     if (err) {
       setError(err);
     } else {
+      if (mode === 'signup') {
+        trackFunnelEvent('signup_completed');
+      }
       onClose();
     }
   };

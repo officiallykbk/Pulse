@@ -11,6 +11,7 @@
  */
 
 import { type TtlStorageAdapter } from './ttlStorage';
+import { trackFunnelEvent } from './funnelTelemetry';
 
 export const ANONYMOUS_STORAGE_KEY = 'pulse:anonymous:v1';
 export const MAX_ANONYMOUS_SAVES = 5;
@@ -265,6 +266,7 @@ export class AnonymousStateManager implements AnonymousStateModule {
     // Save
     if (state.saved.length >= MAX_ANONYMOUS_SAVES) {
       // Reached 5 saved limit! Conversion modal trigger required
+      trackFunnelEvent('guest_save_limit_reached', { count: state.saved.length });
       return { saved: false, limitReached: true };
     }
 
@@ -278,6 +280,7 @@ export class AnonymousStateManager implements AnonymousStateModule {
     state.saved.push(newEntry);
     this.writeState(state);
     this.notify();
+    trackFunnelEvent('guest_save_added', { count: state.saved.length });
     return { saved: true, limitReached: false };
   }
 

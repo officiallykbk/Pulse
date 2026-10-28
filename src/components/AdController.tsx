@@ -9,6 +9,7 @@ import {
   type AdNetworkId,
 } from '@/services/adMediation';
 import { loadAppSettings } from '@/lib/settings';
+import { trackFunnelEvent } from '@/lib/funnelTelemetry';
 
 export interface AdControllerProps {
   tier: UserTier;
@@ -70,12 +71,15 @@ export function AdController({
     let cancelled = false;
 
     async function loadAd() {
+      trackFunnelEvent('ad_opportunity', { tier });
+
       // If Data Saver is active, skip heavy video auction and use lightweight sponsor card
       if (isDataSaverActive()) {
         if (!cancelled) {
           setAdStatus('no-fill');
           setCanSkip(true);
           onLockChange(false);
+          trackFunnelEvent('ad_no_fill');
         }
         return;
       }
@@ -90,10 +94,12 @@ export function AdController({
               setAdVideo(ad);
               setNetworkName('Direct Sponsor');
               setAdStatus('filled');
+              trackFunnelEvent('ad_filled', { network: 'Direct Sponsor' });
             } else {
               setAdStatus('no-fill');
               setCanSkip(true);
               onLockChange(false);
+              trackFunnelEvent('ad_no_fill');
             }
           }
         } else {
@@ -103,10 +109,12 @@ export function AdController({
               setAdVideo(waterfall.ad);
               setNetworkName(waterfall.networkName);
               setAdStatus('filled');
+              trackFunnelEvent('ad_filled', { network: waterfall.networkName });
             } else {
               setAdStatus('no-fill');
               setCanSkip(true);
               onLockChange(false);
+              trackFunnelEvent('ad_no_fill');
             }
           }
         }
@@ -115,6 +123,7 @@ export function AdController({
           setAdStatus('error');
           setCanSkip(true);
           onLockChange(false);
+          trackFunnelEvent('ad_no_fill');
         }
       }
     }
