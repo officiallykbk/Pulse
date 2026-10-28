@@ -3,10 +3,14 @@ import Hls from 'hls.js';
 import { Volume2, VolumeX, Play } from 'lucide-react';
 
 import { feedActions } from '@/lib/feedActions';
+import { useSoundState } from '@/hooks/useSoundState';
+import { useVideoProgress } from '@/hooks/useVideoProgress';
+import { loadAppSettings } from '@/lib/settings';
 
 export type PlayerSlotState = 'active' | 'prefetch' | 'paused' | 'idle';
 
 interface VideoPlayerProps {
+  videoId: string;
   videoUrl: string;
   posterUrl?: string | null;
   isActive?: boolean;
@@ -14,20 +18,29 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({
+  videoId,
   videoUrl,
   posterUrl,
   isActive = false,
   slotState: explicitSlotState,
 }: VideoPlayerProps) {
   const slotState: PlayerSlotState = explicitSlotState ?? (isActive ? 'active' : 'idle');
+  const { isMuted, toggleMute } = useSoundState();
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  useVideoProgress(videoId, videoRef, slotState === 'active');
   const hlsRef = useRef<Hls | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // Sync video element mute state with global sound manager
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = isMuted;
+  }, [isMuted]);
 
   // Manage HLS / Media attachment across the sliding window states
   useEffect(() => {
@@ -95,20 +108,27 @@ export function VideoPlayer({
     // Slot: ACTIVE -> Play immediately, upgrade buffer if needed
     if (slotState === 'active') {
       setError(false);
+      const appSettings = loadAppSettings();
       if (videoUrl.includes('.m3u8') && Hls.isSupported()) {
         if (!hlsRef.current) {
           const hls = new Hls({
-            maxBufferLength: 8,
-            maxMaxBufferLength: 15,
+            maxBufferLength: appSettings.dataSaver ? 2 : 8,
+            maxMaxBufferLength: appSettings.dataSaver ? 4 : 15,
             capLevelToPlayerSize: true,
+            startLevel: appSettings.dataSaver ? 0 : -1,
           });
+          hls.autoLevelCapping = appSettings.dataSaver ? 0 : -1;
           hlsRef.current = hls;
           hls.loadSource(videoUrl);
           hls.attachMedia(video);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             setIsLoaded(true);
-            video.muted = true;
-            video.play().catch(() => {});
+            video.muted = isMuted;
+            if (appSettings.autoplay) {
+              video.play().catch(() => {});
+            } else {
+              setPaused(true);
+            }
           });
           hls.on(Hls.Events.ERROR, (_e, data) => {
             if (data.fatal) setError(true);
@@ -116,8 +136,12 @@ export function VideoPlayer({
         } else {
           // Resuming from prefetch or paused
           hlsRef.current.startLoad();
-          video.muted = muted;
-          video.play().catch(() => {});
+          video.muted = isMuted;
+          if (appSettings.autoplay) {
+            video.play().catch(() => {});
+          } else {
+            setPaused(true);
+          }
           setIsLoaded(true);
         }
       } else {
@@ -125,13 +149,21 @@ export function VideoPlayer({
           video.src = videoUrl;
           video.onloadeddata = () => {
             setIsLoaded(true);
-            video.muted = muted;
-            video.play().catch(() => {});
+            video.muted = isMuted;
+            if (appSettings.autoplay) {
+              video.play()?.catch(() => {});
+            } else {
+              setPaused(true);
+            }
           };
           video.onerror = () => setError(true);
         } else {
-          video.muted = muted;
-          video.play().catch(() => {});
+          video.muted = isMuted;
+          if (appSettings.autoplay) {
+            video.play()?.catch(() => {});
+          } else {
+            setPaused(true);
+          }
           setIsLoaded(true);
         }
       }
@@ -144,7 +176,7 @@ export function VideoPlayer({
         hlsRef.current = null;
       }
     };
-  }, [slotState, videoUrl]);
+  }, [slotState, videoUrl, isMuted]);
 
   // Handle play/pause, timeupdate, and progress for active player
   useEffect(() => {
@@ -183,23 +215,6 @@ export function VideoPlayer({
       }
     });
   }, [slotState]);
-
-  useEffect(() => {
-    if (slotState !== 'active') return;
-    return feedActions.on('mute', () => {
-      const video = videoRef.current;
-      if (!video) return;
-      video.muted = !video.muted;
-      setMuted(video.muted);
-    });
-  }, [slotState]);
-
-  const toggleMute = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.muted = !video.muted;
-    setMuted(video.muted);
-  };
 
   const togglePause = () => {
     const video = videoRef.current;
@@ -248,14 +263,15 @@ export function VideoPlayer({
       {slotState === 'active' && (
         <button
           onClick={toggleMute}
+          aria-label={isMuted ? 'Unmute video' : 'Mute video'}
           className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-colors active:bg-black/60"
         >
-          {muted ? <VolumeX className="h-4 w-4 text-white" /> : <Volume2 className="h-4 w-4 text-white" />}
+          {isMuted ? <VolumeX className="h-4 w-4 text-white" /> : <Volume2 className="h-4 w-4 text-white" />}
         </button>
       )}
 
       {slotState === 'active' && (
-        <div className="absolute bottom-0 left-0 right-0 z-20 h-0.5 bg-white/10">
+        <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 z-20 h-0.5 bg-white/10">
           <div
             className="h-full bg-accent transition-all duration-200 ease-out"
             style={{ width: `${progress}%` }}

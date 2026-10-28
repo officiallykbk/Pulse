@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Camera, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Camera, Check, AlertCircle, Loader2, Dices } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import type { Profile } from '@/types';
+import { AKAN_NAME_DAYS, createUsernameSuggestions, type UsernameStyle } from '@/lib/ghanaianNames';
+import { GeneratedAvatar } from '@/components/GeneratedAvatar';
 
 interface EditProfileScreenProps {
   onBack: () => void;
-  onSaved: () => void;
+  onSaved: (displayName: string) => void;
 }
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5MB
@@ -37,6 +39,12 @@ async function compressImage(file: File): Promise<Blob> {
 export function EditProfileScreen({ onBack, onSaved }: EditProfileScreenProps) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState('');
+  const [usernameStyle, setUsernameStyle] = useState<UsernameStyle>('ghanaian');
+  const [birthWeekday, setBirthWeekday] = useState('');
+  const [nameSuggestions, setNameSuggestions] = useState(() =>
+    createUsernameSuggestions({ style: 'ghanaian' }),
+  );
+  const [rollingNames, setRollingNames] = useState(false);
   const [bio, setBio] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -146,7 +154,7 @@ export function EditProfileScreen({ onBack, onSaved }: EditProfileScreenProps) {
       return;
     }
 
-    onSaved();
+    onSaved(displayName.trim());
   };
 
   const dirty =
@@ -175,9 +183,7 @@ export function EditProfileScreen({ onBack, onSaved }: EditProfileScreenProps) {
             {avatarPreview ? (
               <img src={avatarPreview} alt="Avatar" className="h-full w-full object-cover" />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-white/30">
-                {(displayName || '?').charAt(0).toUpperCase()}
-              </span>
+              <GeneratedAvatar name={displayName || profile?.display_name || 'Pulse member'} className="h-full w-full text-2xl" />
             )}
             <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-active:opacity-100">
               <Camera className="h-6 w-6 text-white" />
@@ -215,6 +221,104 @@ export function EditProfileScreen({ onBack, onSaved }: EditProfileScreenProps) {
             {nameCheck === 'taken' && (
               <p className="mt-1 text-xs text-error">That name is taken</p>
             )}
+            <div className="mt-3 rounded-xl bg-surface-raised/70 p-3">
+              <p className="mb-2 text-xs font-medium text-white/55">Choose a name style</p>
+              <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/30 p-1">
+                {([
+                  ['traditional', 'Traditional'],
+                  ['ghanaian', 'Modern'],
+                  ['global', 'Global'],
+                ] as const).map(([style, label]) => (
+                  <button
+                    type="button"
+                    key={style}
+                    aria-pressed={usernameStyle === style}
+                    onClick={() => {
+                      setUsernameStyle(style);
+                      setNameSuggestions(createUsernameSuggestions({ style, birthWeekday }));
+                    }}
+                    className={`rounded-md px-2 py-2 text-[11px] font-medium transition-colors ${
+                      usernameStyle === style ? 'bg-white/10 text-white' : 'text-white/45 hover:text-white/75'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mb-3 mt-2 text-[11px] leading-relaxed text-white/40">
+                {usernameStyle === 'traditional'
+                  ? 'Akan day names are tied to the weekday you were born. Choose the weekday only; no birth date is collected.'
+                  : usernameStyle === 'ghanaian'
+                    ? 'Positive words paired with researched Twi names for animals and places, plus Ghanaian culture.'
+                    : 'Tech-inspired names with a more global feel.'}
+              </p>
+              {usernameStyle === 'traditional' && (
+                <label className="mb-3 block text-xs text-white/65">
+                  Weekday you were born
+                  <select
+                    value={birthWeekday}
+                    onChange={(event) => {
+                      const weekday = event.target.value;
+                      setBirthWeekday(weekday);
+                      setNameSuggestions(createUsernameSuggestions({
+                        style: 'traditional',
+                        birthWeekday: weekday,
+                        exclude: displayName ? [displayName] : [],
+                      }));
+                    }}
+                    className="mt-1.5 w-full rounded-lg bg-black/30 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-accent"
+                  >
+                    <option value="">Choose a weekday</option>
+                    {AKAN_NAME_DAYS.map(({ day }) => <option key={day} value={day}>{day}</option>)}
+                  </select>
+                </label>
+              )}
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-medium text-white/70">Three name ideas</p>
+                <button
+                  type="button"
+                  aria-label="Reroll name suggestions"
+                  disabled={usernameStyle === 'traditional' && !birthWeekday}
+                  onClick={() => {
+                    setRollingNames(true);
+                    setNameSuggestions(createUsernameSuggestions({
+                      style: usernameStyle,
+                      birthWeekday,
+                      exclude: [displayName, ...nameSuggestions],
+                    }));
+                    window.setTimeout(() => setRollingNames(false), 450);
+                  }}
+                  className="flex items-center gap-1.5 rounded-full px-2 py-1 text-xs text-accent transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Dices className={`h-3.5 w-3.5 ${rollingNames ? 'animate-dice-shake' : ''}`} />
+                  <span>Reroll</span>
+                  <span className="sr-only" aria-live="polite">
+                    {rollingNames ? 'Generating new name ideas...' : ''}
+                  </span>
+                </button>
+              </div>
+              <div aria-live="polite" aria-atomic="true" className="flex flex-wrap gap-2">
+                {nameSuggestions.map((suggestion) => (
+                  <button
+                    type="button"
+                    key={suggestion}
+                    onClick={() => setDisplayName(suggestion)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      displayName === suggestion
+                        ? 'border-accent/70 bg-accent/15 text-white'
+                        : 'border-white/10 text-white/80 hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              {nameSuggestions.length > 0 ? (
+                <p className="mt-2 text-[11px] text-white/60">Pick one, then edit it however you like.</p>
+              ) : (
+                <p className="mt-2 text-[11px] text-white/60">Choose your birth weekday to see the matching Akan day names.</p>
+              )}
+            </div>
           </div>
 
           <div>

@@ -7,6 +7,9 @@ import { SearchScreen } from '@/components/SearchScreen';
 import { SettingsScreen } from '@/components/SettingsScreen';
 import { SupportScreen } from '@/components/SupportScreen';
 import { EditProfileScreen } from '@/components/EditProfileScreen';
+import { AdminDashboard } from '@/components/AdminDashboard';
+import { TermsScreen } from '@/components/TermsScreen';
+import { PrivacyScreen } from '@/components/PrivacyScreen';
 import { Upload as UploadIcon, LogIn } from 'lucide-react';
 import { AuthScreen } from '@/components/AuthScreen';
 import { ProUpgradeModal } from '@/components/ProUpgradeModal';
@@ -16,16 +19,25 @@ import { useVideos } from '@/hooks/useVideos';
 import { useUserVideos } from '@/hooks/useUserVideos';
 import { createViewingBudget, VIEWING_LIMIT_MINUTES, type ViewingBudget } from '@/lib/viewingBudget';
 import type { Video } from '@/types';
+import { APP_IDENTITY } from '@/config/appIdentity';
+import { toast } from 'sonner';
 
 function App() {
   const { user, tier, loading, signIn, signUp, signOut } = useAuth();
-  const { videos, initialLoading, loadingMore, hasMore, loadVideos } = useVideos();
+  const { videos, initialLoading, loadingMore, hasMore, loadVideos, loadVideoById, injectVideo } = useVideos();
   const { uploaded, liked: likedVideos, loading: userVideosLoading } = useUserVideos(user?.id ?? null);
   const [view, setView] = useState<View>('home');
   const [authOpen, setAuthOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   const [budget, setBudget] = useState<ViewingBudget>(() => ({ remainingMs: 0, exhausted: false, nearLimit: false }));
+  const [adLocked, setAdLocked] = useState(false);
+  const [feedReady, setFeedReady] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(() =>
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('v') ?? window.location.pathname.match(/^\/watch\/([0-9a-f-]+)\/?$/i)?.[1] ?? null
+      : null
+  );
 
   const budgetRef = useRef(createViewingBudget(tier));
   useEffect(() => {
@@ -46,8 +58,12 @@ function App() {
   }, [tier]);
 
   useEffect(() => {
-    loadVideos(true);
+    void loadVideos(true).finally(() => setFeedReady(true));
   }, [loadVideos]);
+
+  useEffect(() => {
+    if (feedReady && selectedVideoId) void loadVideoById(selectedVideoId);
+  }, [feedReady, selectedVideoId, loadVideoById]);
 
   const handleLoadMore = useCallback(() => {
     loadVideos(false);
@@ -67,21 +83,31 @@ function App() {
   }, [loadVideos]);
 
   const handlePlayVideo = useCallback((video: Video) => {
-    loadVideos(true);
+    injectVideo(video);
+    setSelectedVideoId(video.id);
     setView('home');
-  }, [loadVideos]);
+  }, [injectVideo]);
 
   if (loading || initialLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black">
-        <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+      <div role="status" aria-label="Loading Pulse" className="flex min-h-screen flex-col items-center justify-center gap-3 bg-black">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent shadow-[0_0_30px_rgba(0,230,118,0.18)] animate-pulse-mark">
+          <span className="text-2xl font-black text-white">{APP_IDENTITY.logo.symbol}</span>
+        </div>
+        <span className="text-[11px] font-semibold tracking-[0.2em] text-white/45">{APP_IDENTITY.logo.text.toUpperCase()}</span>
       </div>
     );
   }
 
   return (
     <div className="device-shell fixed inset-0 bg-black text-white">
-      <SideRail activeView={view === 'search' ? 'home' : view} onChange={(v) => setView(v)} />
+      <SideRail
+        activeView={view === 'search' ? 'home' : view}
+        onChange={(v) => {
+          if (!adLocked) setView(v);
+        }}
+        disabled={adLocked}
+      />
 
       <div className="device-column relative flex-1 bg-black">
       {view === 'home' && !budget.exhausted && (
@@ -94,6 +120,9 @@ function App() {
           onUpgrade={handleUpgradeClick}
           onRequireAuth={() => setAuthOpen(true)}
           onSearch={() => setView('search')}
+          onAdLockChange={setAdLocked}
+          initialVideoId={selectedVideoId}
+          shareOrigin={import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin}
         />
       )}
 
@@ -167,6 +196,7 @@ function App() {
           onOpenSettings={() => setView('settings')}
           onOpenEditProfile={() => setView('editProfile')}
           refreshKey={profileRefreshKey}
+          onPlayVideo={handlePlayVideo}
         />
       )}
 
@@ -176,6 +206,9 @@ function App() {
           onBack={() => setView('profile')}
           onRequireAuth={() => setAuthOpen(true)}
           onSignOut={signOut}
+          onOpenAdmin={() => setView('admin')}
+          onOpenTerms={() => setView('terms')}
+          onOpenPrivacy={() => setView('privacy')}
           onDeleted={() => {
             setProfileRefreshKey((k) => k + 1);
             setView('home');
@@ -183,25 +216,36 @@ function App() {
         />
       )}
 
+      {view === 'terms' && <TermsScreen onBack={() => setView('settings')} />}
+      {view === 'privacy' && <PrivacyScreen onBack={() => setView('settings')} />}
+
+      {view === 'admin' && <AdminDashboard onBack={() => setView('settings')} />}
+
       {view === 'support' && <SupportScreen onBack={() => setView('profile')} />}
 
       {view === 'editProfile' && (
         <EditProfileScreen
           onBack={() => setView('profile')}
-          onSaved={() => {
+          onSaved={(savedName) => {
             setProfileRefreshKey((k) => k + 1);
             setView('profile');
+            toast.success(savedName ? `You're in, ${savedName}.` : 'Profile updated. Smooth.');
           }}
         />
       )}
 
-      <BottomNav activeView={view === 'search' ? 'home' : view} onChange={(v) => {
-        if (v === 'profile') {
-          setView('profile');
-        } else {
-          setView(v);
-        }
-      }} />
+      <BottomNav
+        activeView={view === 'search' ? 'home' : view}
+        disabled={adLocked}
+        onChange={(v) => {
+          if (adLocked) return;
+          if (v === 'profile') {
+            setView('profile');
+          } else {
+            setView(v);
+          }
+        }}
+      />
       </div>
 
       <AuthScreen

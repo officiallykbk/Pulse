@@ -40,6 +40,11 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   localStorage.clear();
+  if (typeof window !== 'undefined' && window.HTMLMediaElement) {
+    window.HTMLMediaElement.prototype.play = vi.fn().mockImplementation(() => Promise.resolve());
+    window.HTMLMediaElement.prototype.pause = vi.fn();
+    window.HTMLMediaElement.prototype.load = vi.fn();
+  }
 });
 
 if (!('matchMedia' in window)) {
@@ -55,6 +60,18 @@ if (!('matchMedia' in window)) {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
+  });
+}
+
+if (!('ResizeObserver' in window)) {
+  class ResizeObserverMock {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  Object.defineProperty(window, 'ResizeObserver', {
+    writable: true,
+    value: ResizeObserverMock,
   });
 }
 

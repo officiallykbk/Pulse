@@ -145,7 +145,6 @@ describe('EditProfileScreen', () => {
   });
 
   it('rejects a non-image avatar file', async () => {
-    const user = userEvent.setup();
     state.profileRow = { ...makeProfile() };
     render(<EditProfileScreen {...baseProps} />);
     await screen.findByPlaceholderText(/how should we show you/i);
@@ -169,12 +168,11 @@ describe('EditProfileScreen', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
 
     // jsdom cannot decode images for canvas compression; stub the decode step
-    const createImageBitmapSpy = vi
-      .stubGlobal('createImageBitmap', async () => ({
-        width: 100,
-        height: 100,
-        close: () => {},
-      }));
+    vi.stubGlobal('createImageBitmap', async () => ({
+      width: 100,
+      height: 100,
+      close: () => {},
+    }));
     const canvasSpy = vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockReturnValue({

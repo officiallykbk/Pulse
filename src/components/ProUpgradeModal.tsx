@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Crown, X, Check, Smartphone, CreditCard, Loader2 } from 'lucide-react';
+import { Crown, X, Check, Smartphone, CreditCard } from 'lucide-react';
 import { openCheckout, generateReference, verifyPayment as verifyPaystack } from '@/services/paystack';
 import { initiateMoolreCharge, generateMoolreReference, type MobileNetwork } from '@/services/moolre';
 import { createStripeSession } from '@/services/stripe';
@@ -157,12 +157,12 @@ export function ProUpgradeModal({ open, email, tier, onClose, onSuccess }: ProUp
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">Go Pro</h2>
-            <p className="text-sm text-white/50">GHS 10.00 / month ($0.99)</p>
+            <p className="text-sm text-white/50">GHS 10.00 / month</p>
           </div>
         </div>
 
         <ul className="mb-5 space-y-2.5">
-          {['Zero ads — pure uninterrupted video', 'Priority bandwidth & fast video loading', 'Support favorite creators', 'Cancel anytime'].map((benefit) => (
+          {['Ad-free viewing experience', 'Unlimited video streaming', 'Priority video loading', 'Support content creators'].map((benefit) => (
             <li key={benefit} className="flex items-center gap-3 text-xs text-white/80">
               <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/20">
                 <Check className="h-3 w-3 text-success" />

@@ -1,13 +1,14 @@
 import { Home, Upload, User } from 'lucide-react';
 
-export type View = 'home' | 'upload' | 'profile' | 'search' | 'settings' | 'support' | 'editProfile';
+export type View = 'home' | 'upload' | 'profile' | 'search' | 'settings' | 'support' | 'editProfile' | 'admin' | 'terms' | 'privacy';
 
 interface BottomNavProps {
   activeView: View;
   onChange: (view: View) => void;
+  disabled?: boolean;
 }
 
-export function BottomNav({ activeView, onChange }: BottomNavProps) {
+export function BottomNav({ activeView, onChange, disabled }: BottomNavProps) {
   const items: { view: View; icon: typeof Home; label: string }[] = [
     { view: 'home', icon: Home, label: 'Feed' },
     { view: 'upload', icon: Upload, label: 'Upload' },
@@ -16,15 +17,21 @@ export function BottomNav({ activeView, onChange }: BottomNavProps) {
 
   return (
     <nav
-      className="phone-only absolute bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-white/10 bg-black/90 px-2 py-2 backdrop-blur-lg"
+      className={`phone-only absolute bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-white/10 bg-black/90 px-2 py-2 backdrop-blur-lg transition-opacity duration-300 ${
+        disabled ? 'pointer-events-none opacity-40 select-none cursor-not-allowed' : ''
+      }`}
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      aria-disabled={disabled}
     >
       {items.map(({ view, icon: Icon, label }) => {
         const active = view === activeView;
         return (
           <button
             key={view}
-            onClick={() => onChange(view)}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) onChange(view);
+            }}
             className="flex flex-1 flex-col items-center gap-0.5 py-1"
           >
             <Icon

@@ -4,6 +4,7 @@ import type { View } from '@/components/BottomNav';
 interface SideRailProps {
   activeView: View;
   onChange: (view: View) => void;
+  disabled?: boolean;
 }
 
 const ITEMS: { view: View; icon: typeof Home; label: string }[] = [
@@ -12,15 +13,24 @@ const ITEMS: { view: View; icon: typeof Home; label: string }[] = [
   { view: 'profile', icon: User, label: 'Profile' },
 ];
 
-export function SideRail({ activeView, onChange }: SideRailProps) {
+export function SideRail({ activeView, onChange, disabled }: SideRailProps) {
   return (
-    <nav className="side-rail" aria-label="Main navigation">
+    <nav
+      className={`side-rail transition-opacity duration-300 ${
+        disabled ? 'pointer-events-none opacity-40 select-none cursor-not-allowed' : ''
+      }`}
+      aria-label="Main navigation"
+      aria-disabled={disabled}
+    >
       {ITEMS.map(({ view, icon: Icon, label }) => {
         const active = view === activeView;
         return (
           <button
             key={view}
-            onClick={() => onChange(view)}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) onChange(view);
+            }}
             className="flex w-full flex-col items-center gap-1 rounded-xl py-3 transition-colors hover:bg-white/5"
             aria-current={active ? 'page' : undefined}
           >

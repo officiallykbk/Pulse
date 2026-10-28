@@ -16,13 +16,53 @@ vi.mock('@/services/supabase', () => ({
   },
 }));
 
-import { uploadVideoFile, uploadThumbnailBlob, extractVideoMetadataAndThumbnail } from '@/services/videoUpload';
+import {
+  uploadVideoFile,
+  uploadThumbnailBlob,
+  extractVideoMetadataAndThumbnail,
+  validateVideoFile,
+  validateVideoDuration,
+  MAX_VIDEO_FILE_SIZE_BYTES,
+  MAX_VIDEO_DURATION_SECONDS,
+} from '@/services/videoUpload';
 
 describe('videoUpload service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.upload.mockResolvedValue({ error: null });
     mocks.getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://cdn.pulse.video/test.mp4' } });
+  });
+
+  it('validates file size and allowed MIME types correctly (MP4 and WebM only)', () => {
+    const validMp4 = new File(['small mp4'], 'sample.mp4', { type: 'video/mp4' });
+    expect(validateVideoFile(validMp4).valid).toBe(true);
+
+    const validWebm = new File(['small webm'], 'sample.webm', { type: 'video/webm' });
+    expect(validateVideoFile(validWebm).valid).toBe(true);
+
+    const oversizedFile = new File([''], 'huge.mp4', { type: 'video/mp4' });
+    Object.defineProperty(oversizedFile, 'size', { value: MAX_VIDEO_FILE_SIZE_BYTES + 1024 });
+    const sizeResult = validateVideoFile(oversizedFile);
+    expect(sizeResult.valid).toBe(false);
+    expect(sizeResult.error).toContain('too large');
+
+    // MOV is rejected in TikTok audit MVP (MP4/WebM only)
+    const movFile = new File(['mov data'], 'clip.mov', { type: 'video/quicktime' });
+    expect(validateVideoFile(movFile).valid).toBe(false);
+
+    const invalidType = new File(['pdf data'], 'doc.pdf', { type: 'application/pdf' });
+    const typeResult = validateVideoFile(invalidType);
+    expect(typeResult.valid).toBe(false);
+    expect(typeResult.error).toContain('Unsupported file format');
+  });
+
+  it('enforces maximum 10-minute duration limit', () => {
+    expect(validateVideoDuration(60).valid).toBe(true);
+    expect(validateVideoDuration(MAX_VIDEO_DURATION_SECONDS).valid).toBe(true);
+
+    const overLimit = validateVideoDuration(MAX_VIDEO_DURATION_SECONDS + 15);
+    expect(overLimit.valid).toBe(false);
+    expect(overLimit.error).toContain('maximum allowed duration of 10 minutes');
   });
 
   it('gracefully extracts empty fallback metadata in headless test environment', async () => {

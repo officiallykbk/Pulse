@@ -1,6 +1,17 @@
 export type UserTier = 'anonymous' | 'free' | 'pro';
+export type UserRole = 'user' | 'admin' | 'moderator';
 
-export type VideoStatus = 'uploading' | 'processing' | 'ready' | 'failed';
+export type VideoStatus =
+  | 'uploading'
+  | 'uploaded'
+  | 'processing'
+  | 'pending_review'
+  | 'published'
+  | 'ready'
+  | 'failed'
+  | 'rejected';
+
+export type VideoVisibility = 'public' | 'private' | 'age_restricted';
 
 export interface Video {
   id: string;
@@ -10,8 +21,17 @@ export interface Video {
   thumbnail_url: string | null;
   duration_seconds: number;
   uploader_id: string | null;
+  uploader?: {
+    id?: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
   is_active: boolean;
   status?: VideoStatus;
+  visibility?: VideoVisibility;
+  rejection_reason?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   hls_master_url?: string | null;
   view_count: number;
   like_count: number;
@@ -44,6 +64,10 @@ export interface FeedItem {
 export interface Profile {
   id: string;
   tier: UserTier;
+  role?: UserRole;
+  is_banned?: boolean;
+  banned_at?: string | null;
+  ban_reason?: string | null;
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;

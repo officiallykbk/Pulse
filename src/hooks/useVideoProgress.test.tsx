@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useVideoProgress } from '@/hooks/useVideoProgress';
 
 const mocks = vi.hoisted(() => ({
-  rpc: vi.fn(async (..._args: unknown[]) => ({ data: null, error: null })),
+  rpc: vi.fn(async () => ({ data: null, error: null })),
   getUser: vi.fn(),
   user: null as { id: string } | null,
 }));

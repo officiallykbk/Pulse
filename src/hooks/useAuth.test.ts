@@ -24,6 +24,11 @@ vi.mock('@/services/supabase', () => ({
       const builder = {
         select: () => builder,
         eq: () => builder,
+        order: () => builder,
+        limit: async () => ({
+          data: table === 'subscriptions' ? state.subscriptions : [],
+          error: null,
+        }),
         maybeSingle: async () => ({
           data: table === 'subscriptions' ? state.subscriptions[0] ?? null : null,
           error: null,

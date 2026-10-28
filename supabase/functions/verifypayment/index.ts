@@ -18,6 +18,7 @@ interface VerifyRequest {
   phoneNumber?: string;
   network?: string;
   amount?: number;
+  currency?: string;
   email?: string;
 }
 
@@ -52,6 +53,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const provider = body.provider || "paystack";
+    const action = body.action || "verify";
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -70,7 +72,111 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // --- Provider Verification Handlers ---
+    // ==========================================
+    // ACTION: INITIATE PAYMENT
+    // ==========================================
+    if (action === "initiate") {
+      if (provider === "stripe") {
+        const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
+        if (!stripeSecret) {
+          return new Response(JSON.stringify({ error: "Stripe is not configured yet" }), {
+            status: 503,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const origin = req.headers.get("origin") || "https://pulse.video";
+        const params = new URLSearchParams();
+        params.append("mode", "payment");
+        params.append("client_reference_id", user.id);
+        params.append("customer_email", body.email || user.email || "");
+        params.append("success_url", `${origin}?payment=success&ref=${encodeURIComponent(reference)}`);
+        params.append("cancel_url", `${origin}?payment=cancelled`);
+        params.append("line_items[0][price_data][currency]", (body.currency || "usd").toLowerCase());
+        params.append("line_items[0][price_data][unit_amount]", String(body.amount && body.amount > 0 ? body.amount : 99));
+        params.append("line_items[0][price_data][product_data][name]", "Pulse Pro Subscription (1 Month)");
+        params.append("line_items[0][quantity]", "1");
+        params.append("metadata[userId]", user.id);
+        params.append("metadata[reference]", reference);
+
+        const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripeSecret}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        });
+
+        if (!stripeRes.ok) {
+          const errData = await stripeRes.json().catch(() => ({}));
+          return new Response(JSON.stringify({ error: errData.error?.message || "Failed to create Stripe checkout session" }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const stripeSession = await stripeRes.json();
+        return new Response(JSON.stringify({
+          success: true,
+          url: stripeSession.url,
+          sessionId: stripeSession.id,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } else if (provider === "moolre") {
+        const moolreApiKey = Deno.env.get("MOOLRE_API_KEY");
+        if (!moolreApiKey) {
+          return new Response(JSON.stringify({ error: "Moolre is not configured yet" }), {
+            status: 503,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const moolreRes = await fetch("https://api.moolre.com/v1/charges", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${moolreApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            reference,
+            phone_number: body.phoneNumber,
+            network: body.network,
+            amount: body.amount || 10.0,
+            currency: "GHS",
+            email: body.email || user.email,
+            metadata: { userId: user.id },
+          }),
+        });
+
+        if (!moolreRes.ok) {
+          const errData = await moolreRes.json().catch(() => ({}));
+          return new Response(JSON.stringify({ error: errData.message || "Failed to initiate Moolre prompt" }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          reference,
+          status: "pending",
+          message: "Please check your phone and enter your Mobile Money PIN",
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ error: `Provider ${provider} does not support server initiation` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ==========================================
+    // ACTION: VERIFY PAYMENT
+    // ==========================================
     if (provider === "moolre") {
       const moolreApiKey = Deno.env.get("MOOLRE_API_KEY");
       if (!moolreApiKey) {
@@ -127,8 +233,15 @@ Deno.serve(async (req: Request) => {
 
       const payload = await stripeRes.json();
       const isPaid = payload?.payment_status === "paid";
-      if (!isPaid) {
-        return new Response(JSON.stringify({ error: "Payment not completed or invalid" }), {
+      const currency = (payload?.currency || "").toLowerCase();
+      const amountTotal = payload?.amount_total ?? 0;
+      const ownerMatches =
+        !payload?.client_reference_id ||
+        payload?.client_reference_id === user.id ||
+        payload?.metadata?.userId === user.id;
+
+      if (!isPaid || (currency && currency !== "usd") || amountTotal < 99 || !ownerMatches) {
+        return new Response(JSON.stringify({ error: "Payment not completed, invalid amount, or unauthorized" }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -187,7 +300,9 @@ Deno.serve(async (req: Request) => {
       user_id: user.id,
       tier: "pro",
       status: "active",
-      paystack_reference: reference,
+      payment_provider: provider,
+      payment_reference: reference,
+      paystack_reference: reference, // preserved for backwards compatibility with existing schema/queries
       started_at: new Date().toISOString(),
       expires_at: expiresAt,
     });

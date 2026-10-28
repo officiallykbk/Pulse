@@ -14,6 +14,52 @@ export interface UploadProgress {
   totalBytes: number;
 }
 
+export const MAX_VIDEO_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB limit
+export const MAX_VIDEO_DURATION_SECONDS = 600; // 10 minutes max (TikTok audit MVP constraint)
+export const ALLOWED_VIDEO_TYPES = [
+  'video/mp4',
+  'video/webm',
+];
+export const ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'webm'];
+
+export function validateVideoFile(file: File): { valid: boolean; error: string | null } {
+  if (file.size > MAX_VIDEO_FILE_SIZE_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      valid: false,
+      error: `File is too large (${sizeMb}MB). Maximum allowed video size is 100MB.`,
+    };
+  }
+
+  // Check extension in case browser doesn't detect MIME type
+  const ext = file.name.split('.').pop()?.toLowerCase();
+
+  const typeMatches = ALLOWED_VIDEO_TYPES.includes(file.type);
+  const extMatches = ext ? ALLOWED_VIDEO_EXTENSIONS.includes(ext) : false;
+
+  if (!typeMatches && !extMatches) {
+    return {
+      valid: false,
+      error: 'Unsupported file format. Only MP4 and WebM videos are supported.',
+    };
+  }
+
+  return { valid: true, error: null };
+}
+
+export function validateVideoDuration(durationSeconds: number): { valid: boolean; error: string | null } {
+  if (durationSeconds > MAX_VIDEO_DURATION_SECONDS) {
+    const mins = Math.floor(durationSeconds / 60);
+    const secs = Math.round(durationSeconds % 60);
+    return {
+      valid: false,
+      error: `Video exceeds the maximum allowed duration of 10 minutes (${mins}m ${secs}s).`,
+    };
+  }
+
+  return { valid: true, error: null };
+}
+
 /**
  * Extracts duration, resolution, and a preview thumbnail frame from a client-side video file
  * using an off-screen HTML5 video element and canvas.
@@ -21,6 +67,7 @@ export interface UploadProgress {
 export async function extractVideoMetadataAndThumbnail(file: File): Promise<VideoMetadata> {
   return new Promise((resolve) => {
     let settled = false;
+    // eslint-disable-next-line prefer-const
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const safeResolve = (data: VideoMetadata) => {
@@ -86,8 +133,6 @@ export async function extractVideoMetadataAndThumbnail(file: File): Promise<Vide
 
     video.onloadedmetadata = () => {
       const durationSeconds = Math.round(video.duration) || 0;
-      const width = video.videoWidth || 0;
-      const height = video.videoHeight || 0;
 
       // Seek to 1 second or midpoint to avoid leading black frames
       video.currentTime = Math.min(1.0, durationSeconds > 0 ? durationSeconds / 2 : 0);

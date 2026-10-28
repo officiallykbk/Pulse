@@ -1,12 +1,16 @@
-import { useState, useRef } from 'react';
-import { Upload, Check, AlertCircle, Film, Image as ImageIcon, Link2, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, Check, AlertCircle, Film, Link2, X, ShieldAlert, Lock, Globe, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import {
   extractVideoMetadataAndThumbnail,
   uploadVideoFile,
   uploadThumbnailBlob,
+  validateVideoFile,
+  validateVideoDuration,
   type UploadProgress,
 } from '@/services/videoUpload';
+import { SmartHashtagInput } from '@/components/SmartHashtagInput';
+import type { VideoVisibility } from '@/types';
 
 interface UploadScreenProps {
   onUploaded: () => void;
@@ -21,12 +25,18 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
   const [videoUrl, setVideoUrl] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [duration, setDuration] = useState('');
+  const [visibility, setVisibility] = useState<VideoVisibility>('public');
+
+  // User ban status
+  const [isBanned, setIsBanned] = useState(false);
+  const [banReason, setBanReason] = useState<string | null>(null);
 
   // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewThumbnail, setPreviewThumbnail] = useState<string | null>(null);
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -34,17 +44,44 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from('profiles')
+          .select('is_banned, ban_reason')
+          .eq('id', user.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data?.is_banned) {
+              setIsBanned(true);
+              setBanReason(data.ban_reason || null);
+            }
+          });
+      }
+    });
+  }, []);
 
+  const processFile = async (file: File) => {
     setError(null);
+    const validation = validateVideoFile(file);
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+
     setSelectedFile(file);
     setStatusMessage('Analyzing video & extracting preview...');
 
     try {
       const meta = await extractVideoMetadataAndThumbnail(file);
       if (meta.durationSeconds > 0) {
+        const durationValidation = validateVideoDuration(meta.durationSeconds);
+        if (!durationValidation.valid) {
+          setError(durationValidation.error);
+          handleClearFile();
+          return;
+        }
         setDuration(String(meta.durationSeconds));
       }
       if (meta.thumbnailDataUrl) {
@@ -54,7 +91,6 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
         setThumbnailBlob(meta.thumbnailBlob);
       }
       if (!title.trim()) {
-        // Default title to filename without extension
         const autoTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
         setTitle(autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1));
       }
@@ -62,6 +98,36 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
       console.warn('Metadata extraction warning:', err);
     } finally {
       setStatusMessage(null);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processFile(file);
     }
   };
 
@@ -77,12 +143,26 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBanned) {
+      setError(`Account suspended: ${banReason || 'You are not permitted to upload content.'}`);
+      return;
+    }
+
     if (!title.trim()) return;
 
     if (mode === 'url' && !videoUrl.trim()) return;
     if (mode === 'file' && !selectedFile && !videoUrl.trim()) {
       setError('Please select a video file or provide a video URL');
       return;
+    }
+
+    if (duration) {
+      const durNum = parseInt(duration, 10);
+      const durCheck = validateVideoDuration(durNum);
+      if (!durCheck.valid) {
+        setError(durCheck.error);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -92,10 +172,11 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
     try {
       let finalVideoUrl = videoUrl.trim();
       let finalThumbnailUrl = thumbnailUrl.trim() || null;
+      const isFileUploaded = mode === 'file' && !!selectedFile;
 
       // Execute direct file upload if file is selected
-      if (mode === 'file' && selectedFile) {
-        setStatusMessage('Uploading video file...');
+      if (isFileUploaded && selectedFile) {
+        setStatusMessage('Uploading video file to storage...');
         const { url: uploadedUrl } = await uploadVideoFile(selectedFile, (progress) => {
           setUploadProgress(progress);
         });
@@ -111,13 +192,19 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
         }
       }
 
-      setStatusMessage('Saving video details...');
+      setStatusMessage('Queuing video for moderation review...');
       const { data: { user } } = await supabase.auth.getUser();
 
       const { error: insertError } = await supabase.from('videos').insert({
         title: title.trim(),
         description: description.trim() || null,
+        tags: [...new Set([...(title.match(/#[\p{L}\p{N}_]+/gu) ?? []), ...(description.match(/#[\p{L}\p{N}_]+/gu) ?? [])]
+          .map((tag) => tag.replace(/^#/, '').toLowerCase()))],
         video_url: finalVideoUrl,
+        raw_video_url: finalVideoUrl,
+        status: 'uploaded',
+        is_active: false,
+        visibility,
         thumbnail_url: finalThumbnailUrl,
         duration_seconds: duration ? parseInt(duration, 10) : 0,
         uploader_id: user?.id ?? null,
@@ -133,12 +220,13 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
       setVideoUrl('');
       setThumbnailUrl('');
       setDuration('');
+      setVisibility('public');
       handleClearFile();
 
       setTimeout(() => {
         setSuccess(false);
         onUploaded();
-      }, 1500);
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
     } finally {
@@ -177,10 +265,25 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
           </button>
         </div>
 
+        {isBanned && (
+          <div className="mb-4 flex items-start gap-3 rounded-card border border-error/30 bg-error/15 p-4 text-left">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-error" />
+            <div>
+              <p className="text-sm font-semibold text-error">Account Suspended</p>
+              <p className="mt-1 text-xs text-white/70">
+                {banReason ? `Reason: ${banReason}` : 'Your account has been restricted from uploading content by platform administrators.'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {success && (
           <div className="mb-4 flex items-center gap-3 rounded-card bg-success/15 px-4 py-3">
             <Check className="h-5 w-5 text-success" />
-            <span className="text-sm font-medium text-success">Video uploaded successfully</span>
+            <div className="text-left">
+              <span className="block text-sm font-semibold text-success">Submitted for Review!</span>
+              <span className="block text-xs text-white/60">Your video is queued for admin approval before publishing to the feed.</span>
+            </div>
           </div>
         )}
 
@@ -198,17 +301,26 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
               {!selectedFile ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-white/20 bg-surface-raised px-4 py-8 text-center transition-colors hover:border-accent hover:bg-white/[0.02]"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center transition-colors ${
+                    isDragging
+                      ? 'border-accent bg-accent/10'
+                      : 'border-white/20 bg-surface-raised hover:border-accent hover:bg-white/[0.02]'
+                  }`}
                 >
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent">
                     <Upload className="h-6 w-6" />
                   </div>
-                  <p className="text-sm font-medium text-white">Tap to select a video file</p>
-                  <p className="mt-1 text-xs text-white/40">MP4, MOV, WebM (up to 500MB)</p>
+                  <p className="text-sm font-medium text-white">
+                    {isDragging ? 'Drop video file here' : 'Tap to select or drag video file'}
+                  </p>
+                  <p className="mt-1 text-xs text-white/40">MP4, WebM only (max 100MB, 10 minutes)</p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="video/*"
+                    accept="video/mp4,video/webm"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -288,16 +400,12 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
             />
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-white/80">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full rounded-lg bg-surface-raised px-4 py-3 text-white placeholder-white/30 outline-none ring-1 ring-white/10 focus:ring-accent"
-              placeholder="What is this video about? Add tags #pulse"
-            />
-          </div>
+          <SmartHashtagInput
+            description={description}
+            onChangeDescription={setDescription}
+            title={title}
+            disabled={submitting}
+          />
 
           {mode === 'url' && (
             <>
@@ -325,13 +433,65 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
             </>
           )}
 
+          {/* Visibility / Audience Selector */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-white/80">Visibility</label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setVisibility('public')}
+                className={`flex flex-col items-center justify-center rounded-xl p-2.5 text-center transition-all ${
+                  visibility === 'public'
+                    ? 'border border-accent bg-accent/15 text-white'
+                    : 'border border-white/10 bg-surface-raised text-white/60 hover:text-white'
+                }`}
+              >
+                <Globe className={`mb-1 h-4 w-4 ${visibility === 'public' ? 'text-accent' : 'text-white/40'}`} />
+                <span className="text-xs font-semibold">Public</span>
+                <span className="text-[10px] text-white/40">Feed</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setVisibility('private')}
+                className={`flex flex-col items-center justify-center rounded-xl p-2.5 text-center transition-all ${
+                  visibility === 'private'
+                    ? 'border border-accent bg-accent/15 text-white'
+                    : 'border border-white/10 bg-surface-raised text-white/60 hover:text-white'
+                }`}
+              >
+                <Lock className={`mb-1 h-4 w-4 ${visibility === 'private' ? 'text-accent' : 'text-white/40'}`} />
+                <span className="text-xs font-semibold">Private</span>
+                <span className="text-[10px] text-white/40">Only you</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setVisibility('age_restricted')}
+                className={`flex flex-col items-center justify-center rounded-xl p-2.5 text-center transition-all ${
+                  visibility === 'age_restricted'
+                    ? 'border border-accent bg-accent/15 text-white'
+                    : 'border border-white/10 bg-surface-raised text-white/60 hover:text-white'
+                }`}
+              >
+                <AlertTriangle className={`mb-1 h-4 w-4 ${visibility === 'age_restricted' ? 'text-accent' : 'text-white/40'}`} />
+                <span className="text-xs font-semibold">18+ Only</span>
+                <span className="text-[10px] text-white/40">Restricted</span>
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-accent py-3.5 font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            disabled={submitting || isBanned}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-accent py-3.5 font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Upload className="h-5 w-5" />
-            {submitting ? (statusMessage ?? 'Uploading...') : 'Upload Video'}
+            {isBanned
+              ? 'Uploads Suspended'
+              : submitting
+              ? (statusMessage ?? 'Uploading...')
+              : 'Submit for Review'}
           </button>
         </form>
       </div>

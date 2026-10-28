@@ -11,9 +11,14 @@ import {
   LogIn,
   Pencil,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import { APP_IDENTITY } from '@/config/appIdentity';
+import { GeneratedAvatar } from '@/components/GeneratedAvatar';
+import { useSavedVideos } from '@/hooks/useSavedVideos';
+import { useWatchHistory } from '@/hooks/useWatchHistory';
+import { toast } from 'sonner';
 import type { Video, UserTier, Profile } from '@/types';
 
 interface FollowedCreator {
@@ -34,6 +39,7 @@ interface ProfileScreenProps {
   onOpenSettings: () => void;
   onOpenEditProfile: () => void;
   refreshKey: number;
+  onPlayVideo: (video: Video) => void;
 }
 
 const TIER_LABELS: Record<UserTier, string> = {
@@ -48,7 +54,7 @@ const TIER_COLORS: Record<UserTier, string> = {
   pro: 'text-accent',
 };
 
-function VideoListItem({ video }: { video: Video }) {
+function VideoListItem({ video, onPlay, resumeAt }: { video: Video; onPlay?: () => void; resumeAt?: number }) {
   const formatCount = (n: number) => {
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
     return String(n);
@@ -78,6 +84,15 @@ function VideoListItem({ video }: { video: Video }) {
           </span>
         </div>
       </div>
+      {onPlay && (
+        <button
+          type="button"
+          onClick={onPlay}
+          className="shrink-0 rounded-full bg-accent/15 px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/25"
+        >
+          {resumeAt && resumeAt > 0 ? `Resume ${Math.floor(resumeAt / 60)}:${String(Math.floor(resumeAt % 60)).padStart(2, '0')}` : 'Watch'}
+        </button>
+      )}
     </div>
   );
 }
@@ -94,13 +109,16 @@ export function ProfileScreen({
   onOpenSettings,
   onOpenEditProfile,
   refreshKey,
+  onPlayVideo,
 }: ProfileScreenProps) {
-  const [tab, setTab] = useState<'uploads' | 'likes' | 'following'>('uploads');
+  const [tab, setTab] = useState<'uploads' | 'likes' | 'following' | 'saved' | 'history'>('uploads');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [followedCreators, setFollowedCreators] = useState<FollowedCreator[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const { savedVideos, loading: savedLoading } = useSavedVideos(userId);
+  const { history, loading: historyLoading, clearHistory } = useWatchHistory(userId);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -205,9 +223,10 @@ export function ProfileScreen({
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <UserIcon className="h-7 w-7 text-white/60" />
-                </div>
+                <GeneratedAvatar
+                  name={profile?.display_name || email?.split('@')[0] || APP_IDENTITY.defaultMemberName}
+                  className="h-full w-full text-base"
+                />
               )}
             </div>
             <div className="min-w-0">
@@ -261,34 +280,66 @@ export function ProfileScreen({
           </button>
         )}
 
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Your videos">
           <button
+            role="tab"
+            aria-selected={tab === 'uploads'}
             onClick={() => setTab('uploads')}
-            className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               tab === 'uploads' ? 'bg-surface-raised text-white' : 'text-white/40'
             }`}
           >
             My Videos ({uploadedVideos.length})
           </button>
           <button
+            role="tab"
+            aria-selected={tab === 'likes'}
             onClick={() => setTab('likes')}
-            className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               tab === 'likes' ? 'bg-surface-raised text-white' : 'text-white/40'
             }`}
           >
             Liked ({likedVideos.length})
           </button>
           <button
+            role="tab"
+            aria-selected={tab === 'following'}
             onClick={() => setTab('following')}
-            className={`flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               tab === 'following' ? 'bg-surface-raised text-white' : 'text-white/40'
             }`}
           >
             Following ({following})
           </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'saved'}
+            onClick={() => setTab('saved')}
+            className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              tab === 'saved' ? 'bg-surface-raised text-white' : 'text-white/40'
+            }`}
+          >
+            Saved ({savedVideos.length})
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'history'}
+            onClick={() => setTab('history')}
+            className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              tab === 'history' ? 'bg-surface-raised text-white' : 'text-white/40'
+            }`}
+          >
+            History ({history.length})
+          </button>
         </div>
 
-        {loadingVideos && (
+        {tab === 'history' && (
+          <p className="mb-3 rounded-lg bg-white/[0.04] px-3 py-2 text-xs leading-relaxed text-white/45">
+            Resume keeps your place for continuity. Seeking can still download the media segments needed to continue.
+          </p>
+        )}
+
+        {(loadingVideos || (tab === 'saved' && savedLoading) || (tab === 'history' && historyLoading)) && (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-white/60" />
           </div>
@@ -315,6 +366,20 @@ export function ProfileScreen({
           </div>
         )}
 
+        {!loadingVideos && !savedLoading && tab === 'saved' && savedVideos.length === 0 && (
+          <div className="py-8 text-center">
+            <Film className="mx-auto mb-2 h-8 w-8 text-white/15" />
+            <p className="text-sm text-white/40">Saved videos will appear here</p>
+          </div>
+        )}
+
+        {!loadingVideos && !historyLoading && tab === 'history' && history.length === 0 && (
+          <div className="py-8 text-center">
+            <Eye className="mx-auto mb-2 h-8 w-8 text-white/15" />
+            <p className="text-sm text-white/40">Videos you watch while signed in appear here.</p>
+          </div>
+        )}
+
         {!loadingVideos && tab === 'following' && followedCreators.length > 0 && (
           <div className="space-y-2">
             {followedCreators.map((c) => (
@@ -323,9 +388,7 @@ export function ProfileScreen({
                   {c.avatar_url ? (
                     <img src={c.avatar_url} alt={c.display_name ?? 'Creator'} className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <UserIcon className="h-5 w-5 text-white/30" />
-                    </div>
+                    <GeneratedAvatar name={c.display_name || APP_IDENTITY.defaultMemberName} className="h-full w-full text-sm" />
                   )}
                 </div>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
@@ -362,6 +425,42 @@ export function ProfileScreen({
           <div className="space-y-2">
             {likedVideos.map((v) => (
               <VideoListItem key={v.id} video={v} />
+            ))}
+          </div>
+        )}
+
+        {!loadingVideos && !savedLoading && tab === 'saved' && savedVideos.length > 0 && (
+          <div className="space-y-2">
+            {savedVideos.map((v) => (
+              <VideoListItem key={v.id} video={v} onPlay={() => onPlayVideo?.(v)} />
+            ))}
+          </div>
+        )}
+
+        {!loadingVideos && !historyLoading && tab === 'history' && history.length > 0 && (
+          <div className="space-y-2">
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('Clear your watch history and resume positions?')) return;
+                  const { error } = await clearHistory();
+                  if (error) toast.error('Could not clear watch history. Try again.');
+                  else toast.success('Watch history cleared.');
+                }}
+                className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white/80"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear history
+              </button>
+            </div>
+            {history.map((item) => (
+              <VideoListItem
+                key={item.video.id}
+                video={item.video}
+                resumeAt={item.completed ? 0 : item.positionSeconds}
+                onPlay={() => onPlayVideo(item.video)}
+              />
             ))}
           </div>
         )}

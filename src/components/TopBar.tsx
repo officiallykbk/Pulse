@@ -6,13 +6,17 @@ interface TopBarProps {
   tier: UserTier;
   onUpgrade: () => void;
   onSearch: () => void;
+  disabled?: boolean;
 }
 
-export function TopBar({ tier, onUpgrade, onSearch }: TopBarProps) {
+export function TopBar({ tier, onUpgrade, onSearch, disabled }: TopBarProps) {
   return (
     <div
-      className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pb-2 bg-gradient-to-b from-black/60 to-transparent"
+      className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pb-2 bg-gradient-to-b from-black/60 to-transparent transition-opacity duration-300 ${
+        disabled ? 'opacity-30 pointer-events-none select-none' : ''
+      }`}
       style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+      aria-disabled={disabled}
     >
       <div className="flex items-center gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent">
@@ -29,6 +33,7 @@ export function TopBar({ tier, onUpgrade, onSearch }: TopBarProps) {
       <div className="flex items-center gap-2">
         <button
           onClick={onSearch}
+          disabled={disabled}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm transition-colors active:bg-white/20"
         >
           <Search className="h-4 w-4 text-white" />
@@ -36,6 +41,7 @@ export function TopBar({ tier, onUpgrade, onSearch }: TopBarProps) {
         {tier !== 'pro' && (
           <button
             onClick={onUpgrade}
+            disabled={disabled}
             className="flex items-center gap-1.5 rounded-full bg-accent/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition-colors active:bg-accent"
           >
             <Crown className="h-3.5 w-3.5" />

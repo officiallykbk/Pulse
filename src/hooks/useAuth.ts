@@ -3,13 +3,15 @@ import { supabase } from '@/services/supabase';
 import type { UserTier, AuthState } from '@/types';
 
 async function fetchTier(userId: string): Promise<UserTier> {
-  const { data: sub } = await supabase
+  const { data: subs } = await supabase
     .from('subscriptions')
     .select('status, expires_at')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .maybeSingle();
+    .order('expires_at', { ascending: false })
+    .limit(1);
 
+  const sub = subs?.[0];
   if (sub) {
     if (sub.expires_at) {
       const expires = new Date(sub.expires_at).getTime();
