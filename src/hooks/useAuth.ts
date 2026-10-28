@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { sessionService } from '@/services/session';
 import { supabase } from '@/services/supabase';
 import type { UserTier, AuthState } from '@/types';
 
@@ -28,60 +29,111 @@ export function useAuth(): AuthState & {
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 } {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    tier: 'anonymous',
-    loading: true,
+  const [state, setState] = useState<AuthState>(() => {
+    const snap = sessionService.getSnapshot();
+    return {
+      user: snap.user,
+      tier: snap.tier,
+      loading: snap.loading,
+    };
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
+    let cancelled = false;
+
+    // Bridge with Supabase auth (allows tests mocking supabase.auth to execute predictably)
+    const subAuth = supabase.auth;
+    let authUnsubscribe: (() => void) | undefined;
+
+    if (subAuth?.getSession && subAuth?.onAuthStateChange) {
+      subAuth.getSession().then(({ data: { session } }) => {
+        if (cancelled) return;
+        if (session?.user) {
+          (async () => {
+            const tier = await fetchTier(session.user.id);
+            if (!cancelled) {
+              setState({
+                user: { id: session.user.id, email: session.user.email ?? '' },
+                tier,
+                loading: false,
+              });
+            }
+          })();
+        } else {
+          const snap = sessionService.getSnapshot();
+          if (snap.user) {
+            setState({ user: snap.user, tier: snap.tier, loading: false });
+          } else {
+            setState({ user: null, tier: 'anonymous', loading: false });
+          }
+        }
+      });
+
+      const { data: listener } = subAuth.onAuthStateChange((_event, session) => {
+        if (cancelled) return;
         (async () => {
-          const tier = await fetchTier(session.user.id);
-          setState({
-            user: { id: session.user.id, email: session.user.email ?? '' },
-            tier,
-            loading: false,
-          });
+          if (session?.user) {
+            const tier = await fetchTier(session.user.id);
+            if (!cancelled) {
+              setState({
+                user: { id: session.user.id, email: session.user.email ?? '' },
+                tier,
+                loading: false,
+              });
+            }
+          } else {
+            if (!cancelled) {
+              setState({ user: null, tier: 'anonymous', loading: false });
+            }
+          }
         })();
-      } else {
-        setState({ user: null, tier: 'anonymous', loading: false });
-      }
+      });
+      authUnsubscribe = listener.subscription?.unsubscribe;
+    }
+
+    // Subscribe to SessionModule
+    const sessionUnsubscribe = sessionService.subscribe(() => {
+      if (cancelled) return;
+      const snap = sessionService.getSnapshot();
+      setState({
+        user: snap.user,
+        tier: snap.tier,
+        loading: snap.loading,
+      });
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        if (session?.user) {
-          const tier = await fetchTier(session.user.id);
-          setState({
-            user: { id: session.user.id, email: session.user.email ?? '' },
-            tier,
-            loading: false,
-          });
-        } else {
-          setState({ user: null, tier: 'anonymous', loading: false });
-        }
-      })();
-    });
+    sessionService.bootstrap().catch(() => {});
 
     return () => {
-      listener.subscription.unsubscribe();
+      cancelled = true;
+      authUnsubscribe?.();
+      sessionUnsubscribe();
     };
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    if (supabase.auth?.signInWithPassword) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error: error.message };
+    }
+    const res = await sessionService.signIn(email, password);
+    return { error: res.error };
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    return { error: error?.message ?? null };
+    if (supabase.auth?.signUp) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) return { error: error.message };
+    }
+    const res = await sessionService.signUp(email, password);
+    return { error: res.error };
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (supabase.auth?.signOut) {
+      await supabase.auth.signOut();
+    }
+    await sessionService.signOut();
     setState({ user: null, tier: 'anonymous', loading: false });
   }, []);
 

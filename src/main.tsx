@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { Toaster } from 'sonner';
+import { SessionProvider } from '@/context/SessionProvider';
 
 // Desktop keeps the phone layout in a centered device-style frame.
 if (window.matchMedia('(min-width: 768px)').matches) {
@@ -11,7 +12,9 @@ if (window.matchMedia('(min-width: 768px)').matches) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <Toaster position="top-center" theme="dark" richColors duration={3500} visibleToasts={1} />
+    <SessionProvider>
+      <App />
+      <Toaster position="top-center" theme="dark" richColors duration={3500} visibleToasts={1} />
+    </SessionProvider>
   </StrictMode>
 );
