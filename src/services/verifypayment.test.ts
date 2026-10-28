@@ -38,11 +38,6 @@ await import('./verifypayment-fixtures');
 const handler = serveHandler.fn as Handler;
 
 const SERVICE_URL = 'https://project.supabase.co';
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
-};
 
 function postRequest(body: unknown, withAuth = true): Request {
   return new Request(`${SERVICE_URL}/functions/v1/verifypayment`, {
