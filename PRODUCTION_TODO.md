@@ -119,7 +119,7 @@ Status legend: [x] Done · [~] In progress · [ ] Not started · [YOU] Requires 
   - Slots $|j-i| > 1$: Completely unmounted from DOM to preserve 1GB RAM budget
 - [x] Data Saver mode (HLS 360p bitrate cap & small buffer) and Autoplay settings enforced in playback
 - [x] System fonts only (`system-ui, -apple-system, sans-serif`) — zero web font downloads
-- [x] 175 unit & integration tests passing in Vitest (28/28 test files, 0 failures)
+- [x] 177 unit & integration tests passing in Vitest (28/28 test files, 0 failures)
 
 ## Phase 8 — Go-Live & Deployment (Your Actions)
 - [YOU] Buy domain (e.g. `pulse.video`, ~$10/year)
