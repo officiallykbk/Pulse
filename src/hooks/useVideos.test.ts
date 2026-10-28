@@ -214,5 +214,61 @@ describe('useUserVideos (profile content)', () => {
   });
 });
 
+describe('useVideos (injected & direct video)', () => {
+  beforeEach(() => {
+    setHandlers({});
+  });
+
+  it('injects a video into the feed without duplicates', async () => {
+    setHandlers({
+      videos: () => ({ data: pageOfVideos(2), error: null }),
+    });
+    const { result } = renderHook(() => useVideos());
+    await act(async () => {
+      await result.current.loadVideos(true);
+    });
+
+    const newVideo = makeVideo({ id: 'injected-1', title: 'Injected video' });
+    act(() => {
+      result.current.injectVideo(newVideo);
+    });
+    expect(result.current.videos[0].id).toBe('injected-1');
+    expect(result.current.videos).toHaveLength(3);
+
+    // Re-injecting does not duplicate
+    act(() => {
+      result.current.injectVideo(newVideo);
+    });
+    expect(result.current.videos).toHaveLength(3);
+  });
+
+  it('loads video by id and enriches uploader profile', async () => {
+    setHandlers({
+      videos: (ctx) => {
+        if (ctx.eq.some(([col, val]) => col === 'id' && val === 'target-1')) {
+          return {
+            data: makeVideo({ id: 'target-1', uploader_id: 'user-xyz' }),
+            error: null,
+          };
+        }
+        return { data: [], error: null };
+      },
+      profiles: () => ({
+        data: { id: 'user-xyz', display_name: 'Kofi Mensah', avatar_url: 'https://avatar.test/kofi.jpg' },
+        error: null,
+      }),
+    });
+
+    const { result } = renderHook(() => useVideos());
+    await act(async () => {
+      await result.current.loadVideoById('target-1');
+    });
+
+    expect(result.current.videos).toHaveLength(1);
+    expect(result.current.videos[0].id).toBe('target-1');
+    expect(result.current.videos[0].uploader?.display_name).toBe('Kofi Mensah');
+  });
+});
+
 // keep the mock reference alive for lint
 void supabaseMock;
