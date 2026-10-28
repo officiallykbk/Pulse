@@ -4,6 +4,7 @@ import { VideoOptionsSheet } from '@/components/VideoOptionsSheet';
 import { CommentsSheet } from '@/components/CommentsSheet';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
 import { AgeGateModal } from '@/components/AgeGateModal';
+import { TrustConversionModal, type AuthIntent } from '@/components/TrustConversionModal';
 import { Bookmark, Heart, Share2, MoreVertical, Volume2, VolumeX, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
 import { useLikes } from '@/hooks/useLikes';
 import { useFollow } from '@/hooks/useFollow';
@@ -41,6 +42,8 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   const isRestricted = video.visibility === 'age_restricted';
   const [ageVerified, setAgeVerified] = useState(() => ageVerificationService.getSnapshot() === 'verified');
   const [ageModalOpen, setAgeModalOpen] = useState(false);
+  const [conversionModalOpen, setConversionModalOpen] = useState(false);
+  const [conversionIntent, setConversionIntent] = useState<AuthIntent>('default');
   const [playableUrls, setPlayableUrls] = useState({
     videoUrl: video.video_url,
     posterUrl: video.thumbnail_url,
@@ -114,6 +117,8 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
     if (tier === 'anonymous') {
       const res = anonymousState.toggleSaved(video.id);
       if (res.limitReached) {
+        setConversionIntent('save-limit');
+        setConversionModalOpen(true);
         onRequireAuth();
         return;
       }
@@ -457,6 +462,13 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
         onClose={() => setAgeModalOpen(false)}
         onVerified={() => setAgeVerified(true)}
         contentTitle={video.title}
+      />
+
+      <TrustConversionModal
+        open={conversionModalOpen}
+        intent={conversionIntent}
+        onClose={() => setConversionModalOpen(false)}
+        onContinueToAuth={() => onRequireAuth()}
       />
     </div>
   );

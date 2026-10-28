@@ -6,6 +6,7 @@ import {
   type SessionUser,
   type AuthResult,
 } from '@/services/session';
+import { accountSyncService } from '@/services/accountSync';
 import type { UserTier } from '@/types';
 
 export interface SessionContextValue {
@@ -39,9 +40,16 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({
     });
 
     // 2. Trigger initial session resolution & legacy adoption
-    service.bootstrap().catch((err) => {
-      console.error('Session bootstrap error:', err);
-    });
+    service
+      .bootstrap()
+      .then((res) => {
+        if (res.user) {
+          void accountSyncService.syncAfterAuthentication();
+        }
+      })
+      .catch((err) => {
+        console.error('Session bootstrap error:', err);
+      });
 
     return unsubscribe;
   }, [service]);
