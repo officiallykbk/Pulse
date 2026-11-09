@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { VideoFeed } from '@/components/VideoFeed';
 import { BottomNav, type View } from '@/components/BottomNav';
 import { ProfileScreen } from '@/components/ProfileScreen';
@@ -10,6 +10,7 @@ import { EditProfileScreen } from '@/components/EditProfileScreen';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { TermsScreen } from '@/components/TermsScreen';
 import { PrivacyScreen } from '@/components/PrivacyScreen';
+import { MandatoryAgeGate } from '@/components/MandatoryAgeGate';
 import { Upload as UploadIcon, LogIn } from 'lucide-react';
 import { AuthScreen } from '@/components/AuthScreen';
 import { ProUpgradeModal } from '@/components/ProUpgradeModal';
@@ -227,6 +228,8 @@ function App() {
           window.location.reload();
         }}
       />
+
+      <MandatoryAgeGate />
     </div>
   );
 }
