@@ -253,7 +253,7 @@ describe('Phase 3: Age Verification & Media Isolation', () => {
       const token = generateAgeToken();
       await saveAgeVerification(token);
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
         const urlStr = typeof input === 'string' ? input : (input as Request).url;
 
         // Query video metadata

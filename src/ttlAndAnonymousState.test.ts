@@ -1,22 +1,17 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getTtlItem,
   setTtlItem,
-  removeTtlItem,
   pruneLegacyKeys,
   DEFAULT_TTL_MS,
   type TtlStorageAdapter,
 } from './lib/ttlStorage';
 import {
   AnonymousStateManager,
-  ANONYMOUS_STORAGE_KEY,
-  MAX_ANONYMOUS_SAVES,
   MAX_ANONYMOUS_PROGRESS,
-  ANONYMOUS_TTL_MS,
 } from './lib/anonymousState';
 import {
   UiSessionManager,
-  UI_SESSION_STORAGE_KEY,
   type UiSessionAdapter,
 } from './lib/uiSessionState';
 import { loadAppSettings, saveAppSettings, DEFAULT_SETTINGS } from './lib/settings';

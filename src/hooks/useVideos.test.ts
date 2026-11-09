@@ -59,23 +59,26 @@ vi.mock('@/services/supabase', () => {
     return builder;
   };
 
-  return {
-    supabase: {
-      from: (table: string) => makeBuilder(table),
-      rpc: vi.fn(async () => ({ data: null, error: null })),
-      auth: {
-        getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
-        getSession: vi.fn(async () => ({ data: { session: { access_token: 't' } }, error: null })),
-        onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
-        signOut: vi.fn(async () => ({ error: null })),
-      },
-      storage: {
-        from: () => ({
-          upload: vi.fn(async () => ({ data: { path: 'p' }, error: null })),
-          getPublicUrl: (path: string) => ({ data: { publicUrl: `https://s/${path}` } }),
-        }),
-      },
+  const clientMock = {
+    from: (table: string) => makeBuilder(table),
+    rpc: vi.fn(async () => ({ data: null, error: null })),
+    auth: {
+      getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
+      getSession: vi.fn(async () => ({ data: { session: { access_token: 't' } }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signOut: vi.fn(async () => ({ error: null })),
     },
+    storage: {
+      from: () => ({
+        upload: vi.fn(async () => ({ data: { path: 'p' }, error: null })),
+        getPublicUrl: (path: string) => ({ data: { publicUrl: `https://s/${path}` } }),
+      }),
+    },
+  };
+
+  return {
+    supabase: clientMock,
+    publicSupabase: clientMock,
   };
 });
 

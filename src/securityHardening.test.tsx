@@ -23,10 +23,7 @@ import {
 
 // Endpoints under test
 import { onRequestPost as handleSignIn } from '../functions/api/auth/sign-in';
-import { onRequestPost as handleSignUp } from '../functions/api/auth/sign-up';
 import { onRequestPost as handleAgeVerify } from '../functions/api/age/verify';
-import { onRequestPost as handleUploadSign } from '../functions/api/uploads/sign';
-import { onRequestPost as handleSyncAnonymous } from '../functions/api/sync/anonymous';
 
 // PrivacyScreen component under test
 import { PrivacyScreen } from './components/PrivacyScreen';
@@ -139,7 +136,7 @@ describe('Phase 7: Security and Privacy Hardening', () => {
     });
 
     it('handles circular references without infinite loops', () => {
-      const circular: any = { name: 'Root' };
+      const circular: Record<string, unknown> = { name: 'Root' };
       circular.self = circular;
 
       const sanitized = sanitizeData(circular);

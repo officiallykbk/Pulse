@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { useLikes } from '@/hooks/useLikes';
 import { useFollow } from '@/hooks/useFollow';
 import { validateVideoFile, validateVideoDuration } from '@/services/videoUpload';
@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@/services/supabase', () => {
   const makeBuilder = (table: string) => {
-    let currentFilters: Record<string, unknown> = {};
+    const currentFilters: Record<string, unknown> = {};
 
     const builder: Record<string, unknown> = {
       select: () => builder,

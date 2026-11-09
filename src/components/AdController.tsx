@@ -26,7 +26,7 @@ export type AdStatus = 'resolving' | 'filled' | 'no-fill' | 'error';
  * Checks if the browser or user has activated Data Saver mode.
  * When enabled, Pulse avoids fetching heavy multi-megabyte VAST video payloads.
  */
-export function isDataSaverActive(): boolean {
+function isDataSaverActive(): boolean {
   if (typeof navigator !== 'undefined' && (navigator as unknown as { connection?: { saveData?: boolean } }).connection?.saveData) {
     return true;
   }
@@ -133,7 +133,7 @@ export function AdController({
     return () => {
       cancelled = true;
     };
-  }, [vastUrl, waterfallOrder, onLockChange]);
+  }, [vastUrl, waterfallOrder, onLockChange, tier]);
 
   // 2. Mandatory Lock Countdown: Strictly applies ONLY when a video ad is filled & playable
   useEffect(() => {

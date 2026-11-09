@@ -88,7 +88,7 @@ describe('Phase 3: Privacy-Preserving Funnel Telemetry', () => {
         token: 'secret-token',
         phone: '0241234567',
         intent: 'upload',
-      } as any);
+      } as Record<string, string | number | boolean>);
 
       const parsed = JSON.parse(sentBody);
       expect(parsed.properties.intent).toBe('upload');

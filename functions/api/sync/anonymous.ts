@@ -51,7 +51,6 @@ export async function onRequestPost({
 }): Promise<Response> {
   const supabaseUrl = env.SUPABASE_URL;
   const anonKey = env.SUPABASE_ANON_KEY;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
 
   if (!supabaseUrl || !anonKey) {
     return errorResponse('Database service unavailable', 503);
@@ -187,7 +186,7 @@ export async function onRequestPost({
         updated_at: string;
       }
 
-      let existingMap = new Map<string, ExistingRow>();
+      const existingMap = new Map<string, ExistingRow>();
       if (existingRes.ok) {
         const rows = (await existingRes.json()) as ExistingRow[];
         for (const row of rows) {

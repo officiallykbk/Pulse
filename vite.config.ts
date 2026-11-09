@@ -37,6 +37,15 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    proxy: {
+      '/api/supabase': {
+        target: process.env.VITE_SUPABASE_URL || 'https://ncoiyubkjymurfazgcqk.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/supabase/, ''),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

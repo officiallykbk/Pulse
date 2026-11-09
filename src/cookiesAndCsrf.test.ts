@@ -4,12 +4,10 @@ import {
   serializeCookie,
   buildAuthCookieHeaders,
   buildClearAuthCookieHeaders,
-  getCookieNames,
   isSecureContext,
 } from '../functions/_lib/cookies';
 import {
   generateCsrfToken,
-  verifyOrigin,
   verifyCsrf,
 } from '../functions/_lib/csrf';
 

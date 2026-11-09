@@ -149,7 +149,7 @@ export async function onRequest({ request, env, params }: PagesContext): Promise
       statusText: upstreamResponse.statusText,
       headers: responseHeaders,
     });
-  } catch (err) {
+  } catch {
     return errorResponse('Failed to proxy database request', 502);
   }
 }

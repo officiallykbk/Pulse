@@ -76,7 +76,7 @@ export async function supabaseSignIn(
         expiresIn: payload.expires_in || 3600,
       },
     };
-  } catch (err) {
+  } catch {
     return { error: 'Failed to communicate with authentication service', status: 503 };
   }
 }
@@ -137,7 +137,7 @@ export async function supabaseSignUp(
     }
 
     return { error: 'Registration incomplete', status: 400 };
-  } catch (err) {
+  } catch {
     return { error: 'Failed to communicate with authentication service', status: 503 };
   }
 }

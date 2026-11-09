@@ -81,7 +81,7 @@ export async function submitReport(payload: ReportPayload): Promise<ReportResult
       if (!res.error) {
         return {
           success: true,
-          reportId: (res.data as any)?.[0]?.id,
+          reportId: (res.data as Array<{ id?: string }> | null)?.[0]?.id,
           message: 'Report submitted. Thank you.',
         };
       }

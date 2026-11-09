@@ -31,7 +31,7 @@ export function isLocalhost(urlStr: string): boolean {
   }
 }
 
-export function isSecureContext(request: Request, env?: Record<string, unknown>): boolean {
+export function isSecureContext(request: Request): boolean {
   // If explicitly in development on localhost without SSL, secure may be false.
   // Deployed hostnames MUST ALWAYS use Secure.
   const url = new URL(request.url);

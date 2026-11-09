@@ -51,10 +51,10 @@ describe('Phase 2: Anonymous Content & Comment Safety Reporting', () => {
     });
 
     it('records an anonymous guest report with is_anonymous=true and reporter_id=null', async () => {
-      let capturedBody: any = null;
+      let capturedBody: Array<Record<string, unknown>> = [];
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
         if (url.toString().includes('/rest/v1/reports')) {
-          capturedBody = JSON.parse(init?.body as string);
+          capturedBody = JSON.parse(init?.body as string) as Array<Record<string, unknown>>;
           return new Response(JSON.stringify([{ id: 'rep-anon-1' }]), { status: 201 });
         }
         return new Response('Not found', { status: 404 });
@@ -76,16 +76,16 @@ describe('Phase 2: Anonymous Content & Comment Safety Reporting', () => {
 
       const res = await handleReportSubmit({ request: req, env });
       expect(res.status).toBe(201);
-      const json = await res.json();
+      const json = await res.json() as { success: boolean; reportId: string };
       expect(json.success).toBe(true);
       expect(json.reportId).toBe('rep-anon-1');
 
       // Verify payload passed to Supabase
       expect(capturedBody).toBeInstanceOf(Array);
-      expect(capturedBody[0].video_id).toBe('vid-target-1');
-      expect(capturedBody[0].is_anonymous).toBe(true);
-      expect(capturedBody[0].reporter_id).toBeNull();
-      expect(capturedBody[0].status).toBe('open');
+      expect(capturedBody[0]?.video_id).toBe('vid-target-1');
+      expect(capturedBody[0]?.is_anonymous).toBe(true);
+      expect(capturedBody[0]?.reporter_id).toBeNull();
+      expect(capturedBody[0]?.status).toBe('open');
     });
 
     it('enforces IP rate-limiting for anonymous guests (5 reports per 10m)', async () => {

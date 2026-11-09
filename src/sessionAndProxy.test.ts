@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { onRequestPost as signInHandler } from '../functions/api/auth/sign-in';
-import { onRequestPost as signUpHandler } from '../functions/api/auth/sign-up';
 import { onRequestGet as sessionHandler } from '../functions/api/auth/session';
 import { onRequestPost as signOutHandler } from '../functions/api/auth/sign-out';
 import { onRequestPost as adoptHandler } from '../functions/api/auth/adopt';

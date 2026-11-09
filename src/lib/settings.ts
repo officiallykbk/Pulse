@@ -62,3 +62,19 @@ export function saveAppSettings(settings: AppSettings, ttlMs: number = SETTINGS_
     // Ignore storage write issues
   }
 }
+
+/**
+ * Checks if the browser or user has activated Data Saver mode.
+ * When enabled, Pulse avoids fetching heavy multi-megabyte VAST video payloads.
+ */
+export function isDataSaverActive(): boolean {
+  if (typeof navigator !== 'undefined' && (navigator as unknown as { connection?: { saveData?: boolean } }).connection?.saveData) {
+    return true;
+  }
+  try {
+    const settings = loadAppSettings();
+    return !!settings.dataSaver;
+  } catch {
+    return false;
+  }
+}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Search, X, ArrowLeft, Eye, Heart } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { supabase, publicSupabase } from '@/services/supabase';
 import type { Video } from '@/types';
 
 interface SearchMatch {
@@ -33,19 +33,32 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
     setSearchError(false);
 
     try {
-      const { data: rawMatches, error } = await supabase
+      let matches: SearchMatch[] = [];
+      const { data: rawMatches, error: rpcError } = await supabase
         .rpc('search_public_videos', { search_query: trimmed, result_limit: 30 })
         .abortSignal(signal);
 
+      if (rpcError || !rawMatches) {
+        // Fallback for unmigrated database without search_public_videos RPC
+        const { data: textMatches } = await publicSupabase
+          .from('videos')
+          .select('id')
+          .eq('is_active', true)
+          .or(`title.ilike.%${trimmed}%,description.ilike.%${trimmed}%`)
+          .limit(30)
+          .abortSignal(signal);
+        matches = (textMatches ?? []).map((m, idx) => ({ id: m.id, relevance: 30 - idx }));
+      } else {
+        matches = rawMatches as SearchMatch[];
+      }
+
       if (signal.aborted) return;
-      if (error) throw error;
-      const matches = (rawMatches ?? []) as SearchMatch[];
-      if (!matches?.length) {
+      if (!matches.length) {
         setResults([]);
         return;
       }
 
-      const { data } = await supabase
+      const { data: initialData, error: selectError } = await supabase
         .from('videos')
         .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at')
         .in('id', matches.map((match) => match.id))
@@ -53,6 +66,23 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
         .in('status', ['published', 'ready'])
         .eq('visibility', 'public')
         .abortSignal(signal);
+
+      let data = initialData;
+
+      if (selectError && (selectError.code === '42703' || selectError.message?.toLowerCase().includes('status') || selectError.message?.toLowerCase().includes('visibility'))) {
+        const fallback = await supabase
+          .from('videos')
+          .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at')
+          .in('id', matches.map((match) => match.id))
+          .eq('is_active', true)
+          .abortSignal(signal);
+        data = (fallback.data ?? []).map((v) => ({
+          ...v,
+          status: 'published' as const,
+          visibility: 'public' as const,
+        }));
+      }
+
       if (signal.aborted) return;
       const videosById = new Map((data ?? []).map((video) => [video.id, video]));
       setResults(matches.map((match) => videosById.get(match.id)).filter((video): video is NonNullable<typeof video> => Boolean(video)));

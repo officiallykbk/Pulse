@@ -42,7 +42,7 @@ const SENSITIVE_KEYS = new Set([
   'cvc',
 ]);
 
-const BEARER_PATTERN = /Bearer\s+([a-zA-Z0-9_\-\.]+)/gi;
+const BEARER_PATTERN = /Bearer\s+([a-zA-Z0-9_\-.]+)/gi;
 const COOKIE_TOKEN_PATTERN = /(__Host-pulse_[a-zA-Z0-9_]+|age_verified)=([^;]+)/gi;
 const PHONE_PATTERN = /(\+?233|0)[235][0-9]{8}\b/g;
 const CARD_PATTERN = /\b(?:\d[ -]*?){13,16}\b/g;

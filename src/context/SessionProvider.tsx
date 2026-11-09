@@ -85,6 +85,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSession(): SessionContextValue {
   const context = useContext(SessionContext);
   if (!context) {
