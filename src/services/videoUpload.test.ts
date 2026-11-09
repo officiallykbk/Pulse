@@ -21,8 +21,10 @@ import {
   uploadThumbnailBlob,
   extractVideoMetadataAndThumbnail,
   validateVideoFile,
+  validateImageFile,
   validateVideoDuration,
   MAX_VIDEO_FILE_SIZE_BYTES,
+  MAX_POSTER_FILE_SIZE_BYTES,
   MAX_VIDEO_DURATION_SECONDS,
 } from '@/services/videoUpload';
 
@@ -91,6 +93,38 @@ describe('videoUpload service', () => {
       expect.stringContaining('posters/thumb_'),
       blob,
       expect.objectContaining({ contentType: 'image/jpeg' })
+    );
+  });
+
+  it('validates poster image size and MIME types (JPEG, PNG, WebP up to 5MB)', () => {
+    const validJpg = new File(['jpg bytes'], 'cover.jpg', { type: 'image/jpeg' });
+    expect(validateImageFile(validJpg).valid).toBe(true);
+
+    const validPng = new File(['png bytes'], 'cover.png', { type: 'image/png' });
+    expect(validateImageFile(validPng).valid).toBe(true);
+
+    const validWebp = new File(['webp bytes'], 'cover.webp', { type: 'image/webp' });
+    expect(validateImageFile(validWebp).valid).toBe(true);
+
+    const oversizedImg = new File([''], 'huge.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(oversizedImg, 'size', { value: MAX_POSTER_FILE_SIZE_BYTES + 2048 });
+    const sizeResult = validateImageFile(oversizedImg);
+    expect(sizeResult.valid).toBe(false);
+    expect(sizeResult.error).toContain('Poster image is too large');
+
+    const invalidImg = new File(['svg data'], 'icon.svg', { type: 'image/svg+xml' });
+    const typeResult = validateImageFile(invalidImg);
+    expect(typeResult.valid).toBe(false);
+    expect(typeResult.error).toContain('Unsupported image format');
+  });
+
+  it('supports upload cancellation via AbortSignal', async () => {
+    const file = new File(['chunk'], 'test.mp4', { type: 'video/mp4' });
+    const controller = new AbortController();
+    controller.abort(); // Pre-aborted signal
+
+    await expect(uploadVideoFile(file, { signal: controller.signal })).rejects.toThrow(
+      'Upload aborted by user'
     );
   });
 });

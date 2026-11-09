@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Check, AlertCircle, Film, Link2, X, ShieldAlert, Lock, Globe, AlertTriangle } from 'lucide-react';
+import { Upload, Check, AlertCircle, Film, Link2, X, ShieldAlert, Lock, Globe, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 import { supabase, accountSupabase } from '@/services/supabase';
 import { sessionService } from '@/services/session';
 import {
@@ -7,6 +7,7 @@ import {
   uploadVideoFile,
   uploadThumbnailBlob,
   validateVideoFile,
+  validateImageFile,
   validateVideoDuration,
   type UploadProgress,
 } from '@/services/videoUpload';
@@ -39,6 +40,8 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const posterInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
   };
 
   const handleClearFile = () => {
+    if (submitting) return;
     setSelectedFile(null);
     setPreviewThumbnail(null);
     setThumbnailBlob(null);
@@ -142,6 +146,38 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    if (posterInputRef.current) {
+      posterInputRef.current.value = '';
+    }
+  };
+
+  const handleCustomPosterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+    setThumbnailBlob(file);
+    try {
+      const url = URL.createObjectURL(file);
+      setPreviewThumbnail(url);
+    } catch {
+      // In headless / mock environments
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setSubmitting(false);
+    setStatusMessage(null);
+    setUploadProgress(null);
+    setError('Upload cancelled.');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -168,6 +204,9 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
       }
     }
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setSubmitting(true);
     setError(null);
     setSuccess(false);
@@ -180,15 +219,19 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
       // Execute direct file upload if file is selected
       if (isFileUploaded && selectedFile) {
         setStatusMessage('Uploading video file to storage...');
-        const { url: uploadedUrl } = await uploadVideoFile(selectedFile, (progress) => {
-          setUploadProgress(progress);
+        const { url: uploadedUrl } = await uploadVideoFile(selectedFile, {
+          onProgress: (progress) => setUploadProgress(progress),
+          signal: abortController.signal,
         });
         finalVideoUrl = uploadedUrl;
 
         // Upload thumbnail if available
         if (thumbnailBlob) {
           setStatusMessage('Uploading thumbnail poster...');
-          const uploadedPosterUrl = await uploadThumbnailBlob(thumbnailBlob);
+          const uploadedPosterUrl = await uploadThumbnailBlob(thumbnailBlob, 'thumb', {
+            onProgress: (progress) => setUploadProgress(progress),
+            signal: abortController.signal,
+          });
           if (uploadedPosterUrl) {
             finalThumbnailUrl = uploadedPosterUrl;
           }
@@ -232,8 +275,13 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
         onUploaded();
       }, 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Upload cancelled.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Upload failed. Please check network connection and retry.');
+      }
     } finally {
+      abortControllerRef.current = null;
       setSubmitting(false);
       setStatusMessage(null);
     }
@@ -292,9 +340,25 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
         )}
 
         {error && (
-          <div className="mb-4 flex items-center gap-3 rounded-card bg-error/15 px-4 py-3">
-            <AlertCircle className="h-5 w-5 text-error" />
-            <span className="text-sm text-error">{error}</span>
+          <div className="mb-4 rounded-card border border-error/30 bg-error/15 p-3.5 text-left">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 shrink-0 text-error" />
+              <span className="text-sm font-medium text-error">{error}</span>
+            </div>
+            {(selectedFile || (mode === 'url' && videoUrl.trim())) && (
+              <div className="mt-2.5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setError(null);
+                    void handleSubmit(e);
+                  }}
+                  className="rounded-lg bg-error/20 px-3 py-1 text-xs font-semibold text-error hover:bg-error/30"
+                >
+                  Retry Upload
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -355,23 +419,70 @@ export function UploadScreen({ onUploaded }: UploadScreenProps) {
                     <button
                       type="button"
                       onClick={handleClearFile}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"
+                      disabled={submitting}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                      aria-label="Remove selected file"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
 
+                  {/* Custom poster image option */}
+                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5">
+                    <div className="flex items-center gap-1.5 text-xs text-white/60">
+                      <ImageIcon className="h-3.5 w-3.5 text-white/40" />
+                      <span>{thumbnailBlob ? 'Custom cover ready' : 'Auto-extracted cover'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => posterInputRef.current?.click()}
+                      className="text-xs font-medium text-accent hover:underline disabled:opacity-40"
+                    >
+                      {thumbnailBlob ? 'Change cover' : 'Upload custom poster'}
+                    </button>
+                    <input
+                      ref={posterInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleCustomPosterChange}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {/* Visual Progress Bar with Byte Counts and Cancellation */}
                   {uploadProgress && (
-                    <div className="mt-3">
-                      <div className="mb-1 flex justify-between text-[11px] text-white/60">
-                        <span>Uploading...</span>
-                        <span>{uploadProgress.percentage}%</span>
+                    <div
+                      className="mt-3 rounded-lg bg-white/5 p-2.5"
+                      role="progressbar"
+                      aria-valuenow={uploadProgress.percentage}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label="Upload progress"
+                    >
+                      <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-white/90">{statusMessage || 'Uploading video...'}</span>
+                        <span className="font-bold text-accent">{uploadProgress.percentage}%</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className="h-full bg-accent transition-all duration-150"
                           style={{ width: `${uploadProgress.percentage}%` }}
                         />
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-white/50">
+                        <span>
+                          {(uploadProgress.loadedBytes / (1024 * 1024)).toFixed(1)} MB of {(uploadProgress.totalBytes / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                        {submitting && (
+                          <button
+                            type="button"
+                            onClick={handleCancelUpload}
+                            className="font-medium text-error hover:underline"
+                          >
+                            Cancel Upload
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
