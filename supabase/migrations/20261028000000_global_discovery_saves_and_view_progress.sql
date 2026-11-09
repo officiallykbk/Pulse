@@ -5,12 +5,30 @@ ALTER TABLE public.videos
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS viewing_insights boolean NOT NULL DEFAULT false;
 
+-- PostgreSQL requires every function used by a stored generated column to be
+-- immutable. array_to_string is only marked stable, so keep it behind a small
+-- immutable helper whose output depends exclusively on its arguments.
+CREATE OR REPLACE FUNCTION public.build_video_search_document(
+  video_title text,
+  video_description text,
+  video_tags text[]
+)
+RETURNS tsvector
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT
+    setweight(to_tsvector('simple', coalesce(video_title, '')), 'A') ||
+    setweight(to_tsvector('simple', coalesce(video_description, '')), 'B') ||
+    setweight(to_tsvector('simple', coalesce(array_to_string(video_tags, ' '), '')), 'B');
+$$;
+
 ALTER TABLE public.videos
   ADD COLUMN IF NOT EXISTS search_document tsvector
   GENERATED ALWAYS AS (
-    setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-    setweight(to_tsvector('simple', coalesce(description, '')), 'B') ||
-    setweight(to_tsvector('simple', array_to_string(tags, ' ')), 'B')
+    public.build_video_search_document(title, description, tags)
   ) STORED;
 
 CREATE INDEX IF NOT EXISTS idx_videos_search_document
