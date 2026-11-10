@@ -33,6 +33,8 @@ export interface Video {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   hls_master_url?: string | null;
+  category?: string | null;
+  tags?: string[];
   view_count: number;
   like_count: number;
   comment_count: number;

@@ -12,12 +12,27 @@ import {
   Film,
   Users,
   Loader2,
+  Tag,
+  Layers,
+  FolderPlus,
+  CheckSquare,
+  Square,
+  Plus,
+  Filter,
 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import {
   getPendingReviewVideos,
+  getVideosForModeration,
   approveVideo,
   rejectVideo,
+  updateVideoCategoryAndTags,
+  deleteVideoAsAdmin,
+  bulkApproveVideos,
+  bulkAssignCategory,
+  bulkDeleteVideos,
+  STANDARD_CATEGORIES,
+  REJECTION_REASON_PRESETS,
   getRecentComments,
   deleteCommentAsAdmin,
   getProfilesForModeration,
@@ -25,6 +40,7 @@ import {
   unbanUser,
   type PendingVideo,
   type ModerationComment,
+  type VideoCategory,
 } from '@/services/adminModeration';
 import type { Profile } from '@/types';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
@@ -43,9 +59,17 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('videos');
 
-  // Video reviews state
+  // Video reviews and content management state
   const [pendingVideos, setPendingVideos] = useState<PendingVideo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoStatusFilter, setVideoStatusFilter] = useState<'all' | 'pending_review' | 'published' | 'rejected'>('pending_review');
+  const [videoCategoryFilter, setVideoCategoryFilter] = useState<string>('all');
+  const [videoSearchQuery, setVideoSearchQuery] = useState('');
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
+  const [editingTagsVideoId, setEditingTagsVideoId] = useState<string | null>(null);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [bulkCategoryTarget, setBulkCategoryTarget] = useState<string>('Entertainment');
+  const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false);
   const [rejectingVideoId, setRejectingVideoId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [processingVideoId, setProcessingVideoId] = useState<string | null>(null);
@@ -90,7 +114,7 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
         setLoadingRole(false);
 
         if (userIsAdmin) {
-          void loadVideos();
+          void loadVideos('pending_review', 'all', '');
         }
       } catch {
         if (active) {
@@ -105,15 +129,147 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
     };
   }, []);
 
-  const loadVideos = async () => {
+  const loadVideos = async (
+    status = videoStatusFilter,
+    category = videoCategoryFilter,
+    search = videoSearchQuery
+  ) => {
     setLoadingVideos(true);
     try {
-      const data = await getPendingReviewVideos();
-      setPendingVideos(data);
+      if (status === 'pending_review' && category === 'all' && !search && typeof getPendingReviewVideos === 'function') {
+        const data = await getPendingReviewVideos();
+        setPendingVideos(data);
+      } else if (typeof getVideosForModeration === 'function') {
+        const data = await getVideosForModeration({
+          status,
+          category: category !== 'all' ? category : undefined,
+          searchQuery: search,
+        });
+        setPendingVideos(data);
+      } else {
+        const data = await getPendingReviewVideos();
+        setPendingVideos(data);
+      }
     } catch {
-      toast.error('Failed to load pending videos');
+      toast.error('Failed to load videos');
     } finally {
       setLoadingVideos(false);
+    }
+  };
+
+  const handleToggleSelectVideo = (id: string) => {
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllVideos = () => {
+    if (selectedVideoIds.size === pendingVideos.length) {
+      setSelectedVideoIds(new Set());
+    } else {
+      setSelectedVideoIds(new Set(pendingVideos.map((v) => v.id)));
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (!currentAdminId || selectedVideoIds.size === 0) return;
+    try {
+      await bulkApproveVideos([...selectedVideoIds], currentAdminId);
+      toast.success(`Approved ${selectedVideoIds.size} videos`);
+      setSelectedVideoIds(new Set());
+      void loadVideos();
+    } catch {
+      toast.error('Failed to bulk approve videos');
+    }
+  };
+
+  const handleBulkAssignCategory = async (category: string) => {
+    if (selectedVideoIds.size === 0) return;
+    try {
+      await bulkAssignCategory([...selectedVideoIds], category);
+      toast.success(`Assigned category "${category}" to ${selectedVideoIds.size} videos`);
+      setShowBulkCategoryModal(false);
+      setSelectedVideoIds(new Set());
+      void loadVideos();
+    } catch {
+      toast.error('Failed to assign category');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedVideoIds.size === 0) return;
+    try {
+      await bulkDeleteVideos([...selectedVideoIds], true);
+      toast.success(`Removed ${selectedVideoIds.size} videos`);
+      setSelectedVideoIds(new Set());
+      void loadVideos();
+    } catch {
+      toast.error('Failed to delete videos');
+    }
+  };
+
+  const handleUpdateCategory = async (videoId: string, category: string) => {
+    const video = pendingVideos.find((v) => v.id === videoId);
+    if (!video) return;
+    try {
+      await updateVideoCategoryAndTags(videoId, category, video.tags || []);
+      setPendingVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, category } : v))
+      );
+      toast.success(`Category updated to ${category}`);
+    } catch {
+      toast.error('Failed to update category');
+    }
+  };
+
+  const handleAddTag = async (videoId: string, tagToAdd: string) => {
+    const cleanTag = tagToAdd.replace(/^#/, '').trim().toLowerCase();
+    if (!cleanTag) return;
+    const video = pendingVideos.find((v) => v.id === videoId);
+    if (!video) return;
+    const currentTags = video.tags || [];
+    if (currentTags.includes(cleanTag)) return;
+    const nextTags = [...currentTags, cleanTag];
+    try {
+      await updateVideoCategoryAndTags(videoId, video.category || 'Entertainment', nextTags);
+      setPendingVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, tags: nextTags } : v))
+      );
+      setNewTagInput('');
+      toast.success(`Tag #${cleanTag} added`);
+    } catch {
+      toast.error('Failed to add tag');
+    }
+  };
+
+  const handleRemoveTag = async (videoId: string, tagToRemove: string) => {
+    const video = pendingVideos.find((v) => v.id === videoId);
+    if (!video) return;
+    const nextTags = (video.tags || []).filter((t) => t !== tagToRemove);
+    try {
+      await updateVideoCategoryAndTags(videoId, video.category || 'Entertainment', nextTags);
+      setPendingVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, tags: nextTags } : v))
+      );
+      toast.success(`Tag removed`);
+    } catch {
+      toast.error('Failed to remove tag');
+    }
+  };
+
+  const handleDeleteVideo = async (videoId: string) => {
+    setProcessingVideoId(videoId);
+    try {
+      await deleteVideoAsAdmin(videoId, true);
+      setPendingVideos((prev) => prev.filter((v) => v.id !== videoId));
+      toast.success('Video removed by moderator');
+    } catch {
+      toast.error('Could not remove video');
+    } finally {
+      setProcessingVideoId(null);
     }
   };
 
@@ -320,20 +476,121 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
           </button>
         </div>
 
-        {/* ================= VIDEO APPROVALS TAB ================= */}
+        {/* ================= VIDEO APPROVALS & CONTENT MANAGEMENT TAB ================= */}
         {activeTab === 'videos' && (
           <div className="mt-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white/80">
-                Pending Publishing Queue ({pendingVideos.length})
-              </h2>
-              <button
-                onClick={loadVideos}
-                disabled={loadingVideos}
-                className="text-xs text-accent hover:underline disabled:opacity-50"
-              >
-                Refresh
-              </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white/80">
+                  Content Management & Moderation ({pendingVideos.length})
+                </h2>
+                <button
+                  onClick={() => loadVideos()}
+                  disabled={loadingVideos}
+                  className="text-xs text-accent hover:underline disabled:opacity-50"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {/* Filters & Search Bar */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-white/40" />
+                  <input
+                    type="text"
+                    value={videoSearchQuery}
+                    onChange={(e) => {
+                      setVideoSearchQuery(e.target.value);
+                      loadVideos(videoStatusFilter, videoCategoryFilter, e.target.value);
+                    }}
+                    placeholder="Search videos by title..."
+                    className="w-full rounded-xl bg-surface-raised py-2 pl-8 pr-3 text-xs text-white placeholder-white/30 outline-none ring-1 ring-white/10 focus:ring-accent"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={videoStatusFilter}
+                    onChange={(e) => {
+                      const val = e.target.value as 'all' | 'pending_review' | 'published' | 'rejected';
+                      setVideoStatusFilter(val);
+                      loadVideos(val, videoCategoryFilter, videoSearchQuery);
+                    }}
+                    className="rounded-xl bg-surface-raised px-3 py-2 text-xs font-medium text-white outline-none ring-1 ring-white/10"
+                  >
+                    <option value="pending_review">Pending Review</option>
+                    <option value="published">Published</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="all">All Statuses</option>
+                  </select>
+
+                  <select
+                    value={videoCategoryFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVideoCategoryFilter(val);
+                      loadVideos(videoStatusFilter, val, videoSearchQuery);
+                    }}
+                    className="rounded-xl bg-surface-raised px-3 py-2 text-xs font-medium text-white outline-none ring-1 ring-white/10"
+                  >
+                    <option value="all">All Categories</option>
+                    {STANDARD_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Bulk Actions Bar */}
+              {pendingVideos.length > 0 && (
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-surface-raised px-3.5 py-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAllVideos}
+                    className="flex items-center gap-2 text-xs text-white/70 hover:text-white"
+                  >
+                    {selectedVideoIds.size === pendingVideos.length && pendingVideos.length > 0 ? (
+                      <CheckSquare className="h-4 w-4 text-accent" />
+                    ) : (
+                      <Square className="h-4 w-4 text-white/40" />
+                    )}
+                    <span>
+                      {selectedVideoIds.size > 0
+                        ? `${selectedVideoIds.size} selected`
+                        : 'Select All Videos'}
+                    </span>
+                  </button>
+
+                  {selectedVideoIds.size > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleBulkApprove}
+                        className="rounded-lg bg-success/20 px-2.5 py-1 text-[11px] font-semibold text-success hover:bg-success/30"
+                      >
+                        Approve ({selectedVideoIds.size})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkCategoryModal(true)}
+                        className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20"
+                      >
+                        Categorize
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBulkDelete}
+                        className="rounded-lg bg-error/15 px-2.5 py-1 text-[11px] font-semibold text-error hover:bg-error/25"
+                      >
+                        Delete ({selectedVideoIds.size})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {loadingVideos ? (
@@ -344,7 +601,7 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
               <div className="rounded-2xl border border-white/5 bg-surface-raised p-8 text-center">
                 <CheckCircle className="mx-auto h-8 w-8 text-success/60" />
                 <p className="mt-2 text-sm font-semibold text-white">All Caught Up!</p>
-                <p className="mt-1 text-xs text-white/40">No pending video uploads requiring review.</p>
+                <p className="mt-1 text-xs text-white/40">No videos matching the selected criteria.</p>
               </div>
             ) : (
               pendingVideos.map((video) => (
@@ -352,7 +609,21 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                   key={video.id}
                   className="overflow-hidden rounded-2xl border border-white/10 bg-surface-raised p-4 transition-all"
                 >
-                  <div className="flex gap-3">
+                  <div className="flex items-start gap-3">
+                    {/* Bulk Selection Checkbox */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSelectVideo(video.id)}
+                      className="mt-1 flex-shrink-0 text-white/40 hover:text-white"
+                      aria-label={selectedVideoIds.has(video.id) ? 'Deselect video' : 'Select video'}
+                    >
+                      {selectedVideoIds.has(video.id) ? (
+                        <CheckSquare className="h-4 w-4 text-accent" />
+                      ) : (
+                        <Square className="h-4 w-4" />
+                      )}
+                    </button>
+
                     <div className="relative h-24 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-black">
                       {video.thumbnail_url ? (
                         <img
@@ -375,22 +646,119 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="truncate text-sm font-semibold text-white">{video.title}</h3>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                            video.visibility === 'public'
-                              ? 'bg-accent/20 text-accent'
-                              : video.visibility === 'age_restricted'
-                              ? 'bg-warning/20 text-warning'
-                              : 'bg-white/10 text-white/60'
-                          }`}
-                        >
-                          {video.visibility || 'public'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                              video.status === 'published'
+                                ? 'bg-success/20 text-success'
+                                : video.status === 'rejected'
+                                ? 'bg-error/20 text-error'
+                                : 'bg-warning/20 text-warning'
+                            }`}
+                          >
+                            {video.status || 'pending'}
+                          </span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                              video.visibility === 'public'
+                                ? 'bg-accent/20 text-accent'
+                                : video.visibility === 'age_restricted'
+                                ? 'bg-warning/20 text-warning'
+                                : 'bg-white/10 text-white/60'
+                            }`}
+                          >
+                            {video.visibility || 'public'}
+                          </span>
+                        </div>
                       </div>
 
                       {video.description && (
                         <p className="mt-1 line-clamp-2 text-xs text-white/60">{video.description}</p>
                       )}
+
+                      {/* Category Selector Badge */}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1 text-[11px] text-white/50">
+                          <Layers className="h-3 w-3 text-accent" />
+                          <span>Category:</span>
+                          <select
+                            value={video.category || 'Entertainment'}
+                            onChange={(e) => handleUpdateCategory(video.id, e.target.value)}
+                            className="rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white/90 outline-none ring-1 ring-white/10 focus:ring-accent"
+                          >
+                            {STANDARD_CATEGORIES.map((cat) => (
+                              <option key={cat} value={cat}>
+                                {cat}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Inline Tags Editor */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <Tag className="h-3 w-3 text-white/40" />
+                        {(video.tags || []).map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/70"
+                          >
+                            #{tag}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTag(video.id, tag)}
+                              className="text-white/40 hover:text-white"
+                              aria-label={`Remove tag ${tag}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        {editingTagsVideoId === video.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={newTagInput}
+                              onChange={(e) => setNewTagInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddTag(video.id, newTagInput);
+                                }
+                              }}
+                              placeholder="tag"
+                              className="w-16 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white outline-none ring-1 ring-white/20"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddTag(video.id, newTagInput)}
+                              className="text-[10px] font-semibold text-accent hover:underline"
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingTagsVideoId(null)}
+                              className="text-[10px] text-white/40 hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTagsVideoId(video.id);
+                              setNewTagInput('');
+                            }}
+                            className="inline-flex items-center gap-0.5 rounded border border-dashed border-white/20 px-1.5 py-0.5 text-[10px] text-white/50 hover:border-accent hover:text-accent"
+                          >
+                            <Plus className="h-2.5 w-2.5" />
+                            Tag
+                          </button>
+                        )}
+                      </div>
 
                       <div className="mt-2 flex items-center gap-2 text-[11px] text-white/40">
                         <span>Creator: {video.uploader?.display_name || video.uploader_id?.slice(0, 8) || 'Anonymous'}</span>
@@ -401,34 +769,69 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                   </div>
 
                   {/* Actions rail */}
-                  <div className="mt-4 flex gap-2 border-t border-white/5 pt-3">
-                    <button
-                      onClick={() => handleApproveVideo(video.id)}
-                      disabled={processingVideoId === video.id}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-success/20 py-2 text-xs font-semibold text-success transition hover:bg-success/30 disabled:opacity-50"
-                    >
-                      {processingVideoId === video.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
+                  <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3">
+                    {video.status === 'pending_review' ? (
+                      <>
+                        <button
+                          onClick={() => handleApproveVideo(video.id)}
+                          disabled={processingVideoId === video.id}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-success/20 py-2 text-xs font-semibold text-success transition hover:bg-success/30 disabled:opacity-50"
+                        >
+                          {processingVideoId === video.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle className="h-3.5 w-3.5" />
+                          )}
+                          Approve & Publish
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setRejectingVideoId(video.id);
+                            setRejectionReason('');
+                          }}
+                          disabled={processingVideoId === video.id}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-error/15 py-2 text-xs font-semibold text-error transition hover:bg-error/25 disabled:opacity-50"
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                          Reject Video
+                        </button>
+                      </>
+                    ) : video.status === 'published' ? (
+                      <button
+                        onClick={() => {
+                          setRejectingVideoId(video.id);
+                          setRejectionReason('Unpublished by moderator');
+                        }}
+                        disabled={processingVideoId === video.id}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-warning/15 py-2 text-xs font-semibold text-warning transition hover:bg-warning/25 disabled:opacity-50"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        Unpublish Video
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleApproveVideo(video.id)}
+                        disabled={processingVideoId === video.id}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-success/20 py-2 text-xs font-semibold text-success transition hover:bg-success/30 disabled:opacity-50"
+                      >
                         <CheckCircle className="h-3.5 w-3.5" />
-                      )}
-                      Approve & Publish
-                    </button>
+                        Restore to Feed
+                      </button>
+                    )}
 
                     <button
-                      onClick={() => {
-                        setRejectingVideoId(video.id);
-                        setRejectionReason('');
-                      }}
+                      onClick={() => handleDeleteVideo(video.id)}
                       disabled={processingVideoId === video.id}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-error/15 py-2 text-xs font-semibold text-error transition hover:bg-error/25 disabled:opacity-50"
+                      title="Delete Video"
+                      aria-label="Delete video"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-error/10 text-error/80 hover:bg-error/20 hover:text-error disabled:opacity-40"
                     >
-                      <XCircle className="h-3.5 w-3.5" />
-                      Reject Video
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
 
-                  {/* Rejection reason inline prompt */}
+                  {/* Rejection reason inline prompt with Preset shortcuts */}
                   {rejectingVideoId === video.id && (
                     <div className="mt-3 rounded-xl border border-error/20 bg-black/40 p-3">
                       <label className="block text-xs font-semibold text-error">Rejection Reason</label>
@@ -439,7 +842,22 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                         placeholder="e.g. Inappropriate content, poor audio quality"
                         className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-xs text-white placeholder-white/30 outline-none ring-1 ring-white/10 focus:ring-error"
                       />
-                      <div className="mt-2 flex justify-end gap-2">
+
+                      {/* Standard Presets */}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {REJECTION_REASON_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setRejectionReason(preset)}
+                            className="rounded bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 flex justify-end gap-2">
                         <button
                           onClick={() => setRejectingVideoId(null)}
                           className="rounded-lg px-3 py-1.5 text-xs text-white/50 hover:text-white"
@@ -457,6 +875,43 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                   )}
                 </div>
               ))
+            )}
+
+            {/* Bulk Category Assignment Modal */}
+            {showBulkCategoryModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-surface-raised p-5 text-white">
+                  <h3 className="text-base font-semibold">Assign Category</h3>
+                  <p className="mt-1 text-xs text-white/60">
+                    Apply category to {selectedVideoIds.size} selected videos
+                  </p>
+                  <select
+                    value={bulkCategoryTarget}
+                    onChange={(e) => setBulkCategoryTarget(e.target.value)}
+                    className="mt-3 w-full rounded-xl bg-surface-elevated px-3 py-2.5 text-xs font-medium text-white outline-none ring-1 ring-white/10"
+                  >
+                    {STANDARD_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button
+                      onClick={() => setShowBulkCategoryModal(false)}
+                      className="rounded-lg px-3 py-1.5 text-xs text-white/60 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleBulkAssignCategory(bulkCategoryTarget)}
+                      className="rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-white hover:bg-accent-hover"
+                    >
+                      Apply Category
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

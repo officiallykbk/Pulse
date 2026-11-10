@@ -17,11 +17,43 @@ export interface ModerationComment extends Comment {
   video_title?: string;
 }
 
+export const STANDARD_CATEGORIES = [
+  'Entertainment',
+  'Music',
+  'Dance',
+  'Comedy',
+  'News',
+  'Education',
+  'Sports',
+  'Culture',
+] as const;
+
+export type VideoCategory = (typeof STANDARD_CATEGORIES)[number];
+
+export const REJECTION_REASON_PRESETS = [
+  'Inappropriate or explicit content',
+  'Spam, misleading or promotional abuse',
+  'Copyright or intellectual property violation',
+  'Low video or audio quality',
+  'Harassment, hate speech, or abuse',
+] as const;
+
+export interface VideoModerationFilter {
+  status?: 'all' | 'pending_review' | 'published' | 'rejected';
+  category?: string;
+  searchQuery?: string;
+  limit?: number;
+}
+
 /**
- * Fetch videos awaiting manual administrative review.
+ * Fetch videos matching moderation filters (status, category, search).
  */
-export async function getPendingReviewVideos(): Promise<PendingVideo[]> {
-  const { data: videos, error } = await supabase
+export async function getVideosForModeration(
+  filter: VideoModerationFilter = {}
+): Promise<PendingVideo[]> {
+  const { status = 'all', category, searchQuery, limit = 50 } = filter;
+
+  let query = supabase
     .from('videos')
     .select(`
       id,
@@ -35,24 +67,40 @@ export async function getPendingReviewVideos(): Promise<PendingVideo[]> {
       status,
       visibility,
       rejection_reason,
+      category,
+      tags,
       view_count,
       like_count,
       comment_count,
       share_count,
       created_at
-    `)
-    .eq('status', 'pending_review')
-    .order('created_at', { ascending: true });
+    `);
+
+  if (status !== 'all') {
+    query = query.eq('status', status);
+  }
+
+  if (category && category !== 'all') {
+    query = query.eq('category', category);
+  }
+
+  if (searchQuery?.trim()) {
+    query = query.ilike('title', `%${searchQuery.trim()}%`);
+  }
+
+  const { data: videos, error } = await query
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   if (error) {
-    throw new Error(`Failed to fetch pending videos: ${error.message}`);
+    throw new Error(`Failed to fetch videos for moderation: ${error.message}`);
   }
 
   if (!videos || videos.length === 0) {
     return [];
   }
 
-  // Fetch uploader profile metadata for each pending video
+  // Fetch uploader profile metadata for each video
   const uploaderIds = [...new Set(videos.map((v) => v.uploader_id).filter(Boolean))] as string[];
   const profileMap = new Map<string, { id: string; display_name: string | null; avatar_url: string | null }>();
 
@@ -69,6 +117,14 @@ export async function getPendingReviewVideos(): Promise<PendingVideo[]> {
     ...v,
     uploader: v.uploader_id ? profileMap.get(v.uploader_id) ?? null : null,
   }));
+}
+
+/**
+ * Fetch videos awaiting manual administrative review.
+ */
+export async function getPendingReviewVideos(): Promise<PendingVideo[]> {
+  const res = await getVideosForModeration({ status: 'pending_review' });
+  return res.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 }
 
 /**
@@ -114,6 +170,123 @@ export async function rejectVideo(videoId: string, reason: string, adminId: stri
 
   if (error) {
     throw new Error(`Failed to reject video: ${error.message}`);
+  }
+}
+
+/**
+ * Update a video's category and tags as an administrator.
+ */
+export async function updateVideoCategoryAndTags(
+  videoId: string,
+  category: string,
+  tags: string[]
+): Promise<void> {
+  const sanitizedTags = [...new Set(tags.map((t) => t.replace(/^#/, '').trim().toLowerCase()).filter(Boolean))];
+  const { error } = await supabase
+    .from('videos')
+    .update({
+      category: category.trim(),
+      tags: sanitizedTags,
+    })
+    .eq('id', videoId);
+
+  if (error) {
+    throw new Error(`Failed to update video metadata: ${error.message}`);
+  }
+}
+
+/**
+ * Delete or soft-delete a video as an administrator.
+ */
+export async function deleteVideoAsAdmin(videoId: string, soft = true): Promise<void> {
+  if (soft) {
+    const { error } = await supabase
+      .from('videos')
+      .update({
+        is_active: false,
+        status: 'rejected',
+        rejection_reason: 'Removed by platform administrator',
+      })
+      .eq('id', videoId);
+
+    if (error) {
+      throw new Error(`Failed to remove video: ${error.message}`);
+    }
+  } else {
+    const { error } = await supabase
+      .from('videos')
+      .delete()
+      .eq('id', videoId);
+
+    if (error) {
+      throw new Error(`Failed to delete video: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Bulk approve multiple videos at once.
+ */
+export async function bulkApproveVideos(videoIds: string[], adminId: string): Promise<void> {
+  if (videoIds.length === 0) return;
+  const { error } = await supabase
+    .from('videos')
+    .update({
+      status: 'published',
+      is_active: true,
+      rejection_reason: null,
+      reviewed_by: adminId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .in('id', videoIds);
+
+  if (error) {
+    throw new Error(`Bulk approve failed: ${error.message}`);
+  }
+}
+
+/**
+ * Bulk assign a category to multiple videos.
+ */
+export async function bulkAssignCategory(videoIds: string[], category: string): Promise<void> {
+  if (videoIds.length === 0) return;
+  const { error } = await supabase
+    .from('videos')
+    .update({ category })
+    .in('id', videoIds);
+
+  if (error) {
+    throw new Error(`Bulk assign category failed: ${error.message}`);
+  }
+}
+
+/**
+ * Bulk delete (soft or hard) multiple videos.
+ */
+export async function bulkDeleteVideos(videoIds: string[], soft = true): Promise<void> {
+  if (videoIds.length === 0) return;
+  if (soft) {
+    const { error } = await supabase
+      .from('videos')
+      .update({
+        is_active: false,
+        status: 'rejected',
+        rejection_reason: 'Removed by platform administrator (bulk action)',
+      })
+      .in('id', videoIds);
+
+    if (error) {
+      throw new Error(`Bulk delete failed: ${error.message}`);
+    }
+  } else {
+    const { error } = await supabase
+      .from('videos')
+      .delete()
+      .in('id', videoIds);
+
+    if (error) {
+      throw new Error(`Bulk delete failed: ${error.message}`);
+    }
   }
 }
 
