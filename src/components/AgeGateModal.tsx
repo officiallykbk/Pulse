@@ -42,85 +42,67 @@ export function AgeGateModal({
       aria-labelledby="age-gate-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
     >
-      <div className="relative w-full max-w-md bg-[#121212] border border-neutral-800 rounded-2xl p-6 shadow-2xl text-white">
+      <div className="relative w-full max-w-[340px] bg-[#141414] border border-white/10 rounded-2xl p-5 shadow-2xl text-white text-center">
         {/* Close Button */}
         <button
           onClick={onClose}
           disabled={loading}
           aria-label="Close"
-          className="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors disabled:opacity-50"
+          className="absolute top-3.5 right-3.5 text-white/40 hover:text-white transition-colors disabled:opacity-50"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        {/* Shield Icon Header */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 id="age-gate-title" className="text-lg font-bold text-white">
-              18+ Content Confirmation
-            </h2>
-            <p className="text-xs text-neutral-400">Privacy-First Self Declaration</p>
-          </div>
+        {/* Shield Icon */}
+        <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+          <ShieldCheck className="w-5 h-5" />
         </div>
 
-        {/* Explanatory Content */}
-        <div className="space-y-3 mb-6 text-sm text-neutral-300">
-          {contentTitle && (
-            <p className="font-semibold text-white truncate">
-              Content: &ldquo;{contentTitle}&rdquo;
-            </p>
-          )}
+        <h2 id="age-gate-title" className="text-base font-bold text-white">
+          18+ Content Confirmation
+        </h2>
 
-          <p>
-            This content is intended exclusively for viewers aged 18 and older.
+        {contentTitle && (
+          <p className="mt-1 text-xs text-white/80 font-medium truncate">
+            &ldquo;{contentTitle}&rdquo;
           </p>
+        )}
 
-          <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-xl text-xs space-y-1.5 text-neutral-400">
-            <p className="font-medium text-neutral-300">🔒 Trust &amp; Privacy Notice:</p>
-            <p>
-              Pulse does not collect your ID, government documents, payment cards, birthdate, or
-              personal identifiers.
-            </p>
-            <p>
-              Confirming sets a private 30-day token on this device to grant access to 18+ content.
-            </p>
-          </div>
-        </div>
+        <p className="mt-2 text-xs text-white/60 leading-relaxed">
+          This content is 18+. Pulse does not collect your ID or personal documents.
+        </p>
 
         {/* Error Display */}
         {error && (
-          <div className="flex items-center gap-2 p-3 mb-4 bg-red-950/40 border border-red-800/50 rounded-xl text-red-300 text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="mt-3 flex items-center gap-1.5 p-2 bg-red-950/40 border border-red-800/50 rounded-lg text-red-300 text-xs text-left">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-2.5">
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="py-2.5 px-3 rounded-xl font-medium bg-white/10 hover:bg-white/15 text-white/80 transition-colors disabled:opacity-50 text-xs"
+          >
+            Cancel
+          </button>
+
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="w-full py-3 px-4 rounded-xl font-semibold bg-[#E50914] hover:bg-[#B80710] text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className="py-2.5 px-3 rounded-xl font-semibold bg-[#E50914] hover:bg-[#B80710] text-white transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 text-xs"
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Affirming...</span>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Checking...</span>
               </>
             ) : (
               <span>I am 18+</span>
             )}
-          </button>
-
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="w-full py-2.5 px-4 rounded-xl font-medium bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors disabled:opacity-50 text-sm"
-          >
-            Cancel
           </button>
         </div>
       </div>
