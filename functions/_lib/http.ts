@@ -10,7 +10,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy':
     'camera=(), microphone=(), geolocation=(), payment=(self "https://js.paystack.co" "https://checkout.stripe.com")',
   'Content-Security-Policy':
-    "default-src 'self'; script-src 'self' https://js.paystack.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.paystack.co https://checkout.stripe.com; frame-src 'self' https://js.paystack.co https://checkout.stripe.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
+    "default-src 'self'; script-src 'self' https://js.paystack.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.paystack.co https://checkout.stripe.com; frame-src 'self' https://js.paystack.co https://checkout.stripe.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
 };
 
 export function jsonResponse(

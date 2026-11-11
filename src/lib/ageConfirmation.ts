@@ -13,6 +13,7 @@
  */
 
 import { ageVerificationService } from '@/services/ageVerification';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 export const AGE_CONFIRMATION_STORAGE_KEY = 'pulse:age_confirmed:v1';
 
@@ -28,12 +29,10 @@ export function isAgeConfirmedLocally(): boolean {
   }
 
   try {
-    if (typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem(AGE_CONFIRMATION_STORAGE_KEY);
-      if (stored === 'true' || stored === '1') {
-        inMemoryAgeConfirmed = true;
-        return true;
-      }
+    const stored = safeLocalStorage.getItem(AGE_CONFIRMATION_STORAGE_KEY);
+    if (stored === 'true' || stored === '1') {
+      inMemoryAgeConfirmed = true;
+      return true;
     }
   } catch {
     // Local storage access blocked (e.g. strict privacy mode or embedded iframe)
@@ -49,9 +48,7 @@ export function setAgeConfirmedLocally(): void {
   inMemoryAgeConfirmed = true;
 
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(AGE_CONFIRMATION_STORAGE_KEY, 'true');
-    }
+    safeLocalStorage.setItem(AGE_CONFIRMATION_STORAGE_KEY, 'true');
   } catch {
     // In-memory fallback already set
   }
@@ -73,9 +70,7 @@ export function setAgeConfirmedLocally(): void {
 export function resetAgeConfirmedLocallyForTesting(): void {
   inMemoryAgeConfirmed = false;
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(AGE_CONFIRMATION_STORAGE_KEY);
-    }
+    safeLocalStorage.removeItem(AGE_CONFIRMATION_STORAGE_KEY);
   } catch {
     // Ignore
   }

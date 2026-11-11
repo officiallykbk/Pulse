@@ -9,6 +9,8 @@
  * - Purpose-limited event catalog to evaluate guest-to-member conversion
  */
 
+import { safeSessionStorage } from './safeStorage';
+
 export type FunnelEventName =
   | 'guest_session_start'
   | 'guest_save_added'
@@ -52,14 +54,12 @@ const DISALLOWED_PROPERTY_KEYS = new Set([
  */
 export function getEphemeralSessionId(): string {
   try {
-    if (typeof sessionStorage !== 'undefined') {
-      let id = sessionStorage.getItem(STORAGE_KEY_SESSION_ID);
-      if (!id) {
-        id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sess_${Math.random().toString(36).slice(2)}`;
-        sessionStorage.setItem(STORAGE_KEY_SESSION_ID, id);
-      }
-      return id;
+    let id = safeSessionStorage.getItem(STORAGE_KEY_SESSION_ID);
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sess_${Math.random().toString(36).slice(2)}`;
+      safeSessionStorage.setItem(STORAGE_KEY_SESSION_ID, id);
     }
+    return id;
   } catch {
     // Storage access blocked; fallback to in-memory
   }
@@ -139,12 +139,9 @@ export function trackFunnelEvent(
  */
 export function trackGuestSessionStartOnce(): void {
   try {
-    if (typeof sessionStorage !== 'undefined') {
-      if (!sessionStorage.getItem(STORAGE_KEY_SESSION_START)) {
-        sessionStorage.setItem(STORAGE_KEY_SESSION_START, '1');
-        trackFunnelEvent('guest_session_start');
-      }
-      return;
+    if (!safeSessionStorage.getItem(STORAGE_KEY_SESSION_START)) {
+      safeSessionStorage.setItem(STORAGE_KEY_SESSION_START, '1');
+      trackFunnelEvent('guest_session_start');
     }
   } catch {
     // Storage access blocked
@@ -155,10 +152,8 @@ export function _resetFunnelSessionForTesting(): void {
   inMemorySessionId = null;
   lastDispatchedEvent = null;
   try {
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(STORAGE_KEY_SESSION_ID);
-      sessionStorage.removeItem(STORAGE_KEY_SESSION_START);
-    }
+    safeSessionStorage.removeItem(STORAGE_KEY_SESSION_ID);
+    safeSessionStorage.removeItem(STORAGE_KEY_SESSION_START);
   } catch {
     // Ignore
   }

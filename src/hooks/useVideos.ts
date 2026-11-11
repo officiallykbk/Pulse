@@ -26,131 +26,133 @@ export function useVideos() {
 
     const offset = reset ? 0 : offsetRef.current;
 
-    let { data, error: queryError } = await supabase
-      .from('videos')
-      .select(
-        'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at'
-      )
-      .eq('is_active', true)
-      .in('status', ['published', 'ready'])
-      .eq('visibility', 'public')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    // Schema fallback: if remote database hasn't had the publishing/moderation columns migration applied yet (PostgreSQL 42703)
-    if (queryError && (queryError.code === '42703' || queryError.message?.toLowerCase().includes('status') || queryError.message?.toLowerCase().includes('visibility'))) {
-      const fallback = await supabase
+    try {
+      let { data, error: queryError } = await supabase
         .from('videos')
         .select(
-          'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at'
+          'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at'
         )
         .eq('is_active', true)
+        .in('status', ['published', 'ready'])
+        .eq('visibility', 'public')
         .order('created_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
-      data = (fallback.data ?? []).map((v) => ({
-        ...v,
-        status: 'published' as const,
-        visibility: 'public' as const,
-      }));
-      queryError = fallback.error;
-    }
 
-    if (queryError) {
-      setError(queryError.message);
-      setInitialLoading(false);
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      setHasMore(false);
-      setInitialLoading(false);
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
-      return;
-    }
-
-    const uploaderIds = [...new Set(data.map((v) => v.uploader_id).filter(Boolean))] as string[];
-    let enrichedVideos: Video[] = data;
-    if (uploaderIds.length > 0) {
-      try {
-        const { data: profiles } = await publicSupabase
-          .from('profiles')
-          .select('id, display_name, avatar_url')
-          .in('id', uploaderIds);
-        if (profiles && profiles.length > 0) {
-          const pMap = new Map(profiles.map((p) => [p.id, p]));
-          enrichedVideos = data.map((v) => ({
-            ...v,
-            uploader: v.uploader_id ? pMap.get(v.uploader_id) ?? null : null,
-          }));
-        }
-      } catch {
-        // Non-blocking: retain videos even if profile enrichment fails
+      // Schema fallback: if remote database hasn't had the publishing/moderation columns migration applied yet (PostgreSQL 42703)
+      if (queryError && (queryError.code === '42703' || queryError.message?.toLowerCase().includes('status') || queryError.message?.toLowerCase().includes('visibility'))) {
+        const fallback = await supabase
+          .from('videos')
+          .select(
+            'id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at'
+          )
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        data = (fallback.data ?? []).map((v) => ({
+          ...v,
+          status: 'published' as const,
+          visibility: 'public' as const,
+        }));
+        queryError = fallback.error;
       }
-    }
 
-    if (reset) {
-      setVideos(enrichedVideos);
-    } else {
-      setVideos((prev) => [...prev, ...enrichedVideos]);
-    }
-    offsetRef.current = offset + data.length;
+      if (queryError) {
+        setError(queryError.message);
+        return;
+      }
 
-    if (data.length < PAGE_SIZE) {
-      setHasMore(false);
-    }
+      if (!data || data.length === 0) {
+        setHasMore(false);
+        return;
+      }
 
-    setInitialLoading(false);
-    setLoadingMore(false);
-    loadingMoreRef.current = false;
+      const uploaderIds = [...new Set(data.map((v) => v.uploader_id).filter(Boolean))] as string[];
+      let enrichedVideos: Video[] = data;
+      if (uploaderIds.length > 0) {
+        try {
+          const { data: profiles } = await publicSupabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', uploaderIds);
+          if (profiles && profiles.length > 0) {
+            const pMap = new Map(profiles.map((p) => [p.id, p]));
+            enrichedVideos = data.map((v) => ({
+              ...v,
+              uploader: v.uploader_id ? pMap.get(v.uploader_id) ?? null : null,
+            }));
+          }
+        } catch {
+          // Non-blocking: retain videos even if profile enrichment fails
+        }
+      }
+
+      if (reset) {
+        setVideos(enrichedVideos);
+      } else {
+        setVideos((prev) => [...prev, ...enrichedVideos]);
+      }
+      offsetRef.current = offset + data.length;
+
+      if (data.length < PAGE_SIZE) {
+        setHasMore(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load feed');
+    } finally {
+      setInitialLoading(false);
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+    }
   }, []);
 
   const loadVideoById = useCallback(async (videoId: string) => {
     if (!videoId || videos.some((video) => video.id === videoId)) return;
-    const { data: initialData, error: queryError } = await supabase
-      .from('videos')
-      .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at')
-      .eq('id', videoId)
-      .eq('is_active', true)
-      .in('status', ['published', 'ready'])
-      .eq('visibility', 'public')
-      .maybeSingle();
-
-    let data = initialData;
-
-    if (queryError && (queryError.code === '42703' || queryError.message?.toLowerCase().includes('status') || queryError.message?.toLowerCase().includes('visibility'))) {
-      const fallback = await supabase
+    try {
+      const { data: initialData, error: queryError } = await supabase
         .from('videos')
-        .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at')
+        .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, status, visibility, view_count, like_count, comment_count, share_count, created_at')
         .eq('id', videoId)
         .eq('is_active', true)
+        .in('status', ['published', 'ready'])
+        .eq('visibility', 'public')
         .maybeSingle();
-      data = fallback.data ? {
-        ...fallback.data,
-        status: 'published' as const,
-        visibility: 'public' as const,
-      } : null;
-    }
 
-    if (data) {
-      let enriched: Video = data;
-      if (data.uploader_id) {
-        try {
-          const { data: profile } = await publicSupabase
-            .from('profiles')
-            .select('id, display_name, avatar_url')
-            .eq('id', data.uploader_id)
-            .maybeSingle();
-          if (profile) {
-            enriched = { ...data, uploader: profile };
-          }
-        } catch {
-          // Non-blocking
-        }
+      let data = initialData;
+
+      if (queryError && (queryError.code === '42703' || queryError.message?.toLowerCase().includes('status') || queryError.message?.toLowerCase().includes('visibility'))) {
+        const fallback = await supabase
+          .from('videos')
+          .select('id, title, description, video_url, thumbnail_url, duration_seconds, uploader_id, is_active, view_count, like_count, comment_count, share_count, created_at')
+          .eq('id', videoId)
+          .eq('is_active', true)
+          .maybeSingle();
+        data = fallback.data ? {
+          ...fallback.data,
+          status: 'published' as const,
+          visibility: 'public' as const,
+        } : null;
       }
-      setVideos((current) => current.some((video) => video.id === enriched.id) ? current : [enriched, ...current]);
+
+      if (data) {
+        let enriched: Video = data;
+        if (data.uploader_id) {
+          try {
+            const { data: profile } = await publicSupabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .eq('id', data.uploader_id)
+              .maybeSingle();
+            if (profile) {
+              enriched = { ...data, uploader: profile };
+            }
+          } catch {
+            // Non-blocking
+          }
+        }
+        setVideos((current) => current.some((video) => video.id === enriched.id) ? current : [enriched, ...current]);
+      }
+    } catch {
+      // Non-blocking if deep-linked video fetch fails or is blocked
     }
   }, [videos]);
 

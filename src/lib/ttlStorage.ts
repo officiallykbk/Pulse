@@ -5,6 +5,8 @@
  * injected clock support for deterministic testing, and graceful storage failure handling.
  */
 
+import { safeLocalStorage } from '@/lib/safeStorage';
+
 export const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface TtlStorageAdapter {
@@ -20,18 +22,8 @@ export interface TtlEnvelope<T> {
   expiresAt: number;
 }
 
-function getBrowserStorage(): TtlStorageAdapter | null {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage;
-    }
-    if (typeof localStorage !== 'undefined') {
-      return localStorage;
-    }
-  } catch {
-    // Storage access blocked or restricted
-  }
-  return null;
+function getBrowserStorage(): TtlStorageAdapter {
+  return safeLocalStorage;
 }
 
 /**

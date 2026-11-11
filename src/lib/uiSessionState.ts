@@ -12,6 +12,8 @@
  * Strictly prohibits passwords, payment fields, tokens, age status, or personal information.
  */
 
+import { safeSessionStorage } from '@/lib/safeStorage';
+
 export const UI_SESSION_STORAGE_KEY = 'pulse:ui_session:v1';
 
 export interface UiSessionState {
@@ -42,18 +44,8 @@ const PROHIBITED_KEYS = new Set([
   'age_verified',
 ]);
 
-function getBrowserSessionStorage(): UiSessionAdapter | null {
-  try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      return window.sessionStorage;
-    }
-    if (typeof sessionStorage !== 'undefined') {
-      return sessionStorage;
-    }
-  } catch {
-    // Storage restricted
-  }
-  return null;
+function getBrowserSessionStorage(): UiSessionAdapter {
+  return safeSessionStorage;
 }
 
 export interface UiSessionModule {

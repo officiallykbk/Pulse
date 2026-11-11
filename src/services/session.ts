@@ -46,9 +46,15 @@ function extractProjectRef(supabaseUrl?: string): string | null {
 }
 
 function readCsrfCookie(): string | null {
-  if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(/(?:^|;\s*)(?:__Host-pulse_csrf|pulse_csrf)=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  try {
+    if (typeof document === 'undefined') return null;
+    const rawCookie = document.cookie;
+    if (!rawCookie) return null;
+    const match = rawCookie.match(/(?:^|;\s*)(?:__Host-pulse_csrf|pulse_csrf)=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
 }
 
 class ProductionSessionService implements SessionModule {
@@ -104,20 +110,20 @@ class ProductionSessionService implements SessionModule {
    * sends it to /api/auth/adopt, and removes it only on success.
    */
   private async migrateLegacySession(): Promise<boolean> {
-    if (typeof window === 'undefined' || !window.localStorage) return false;
-
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const ref = extractProjectRef(supabaseUrl);
-    if (!ref) return false;
-
-    const legacyKey = `sb-${ref}-auth-token`;
-    const raw = window.localStorage.getItem(legacyKey);
-    if (!raw) return false;
-
     try {
+      if (typeof window === 'undefined') return false;
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const ref = extractProjectRef(supabaseUrl);
+      if (!ref) return false;
+
+      const legacyKey = `sb-${ref}-auth-token`;
+      const raw = window.localStorage ? window.localStorage.getItem(legacyKey) : null;
+      if (!raw) return false;
+
       const parsed = JSON.parse(raw) as { access_token?: string; refresh_token?: string };
       if (!parsed.access_token || !parsed.refresh_token) {
-        window.localStorage.removeItem(legacyKey);
+        window.localStorage?.removeItem(legacyKey);
         return false;
       }
 
@@ -142,7 +148,7 @@ class ProductionSessionService implements SessionModule {
           this.csrfToken = data.csrfToken;
         }
         // Migration succeeded: delete legacy key
-        window.localStorage.removeItem(legacyKey);
+        window.localStorage?.removeItem(legacyKey);
         this.updateSnapshot({
           user: data.user,
           tier: data.tier,
@@ -152,10 +158,10 @@ class ProductionSessionService implements SessionModule {
         return true;
       } else {
         // Expired or invalid: remove stale legacy key
-        window.localStorage.removeItem(legacyKey);
+        window.localStorage?.removeItem(legacyKey);
       }
     } catch {
-      // Offline or network error: retain key for retry on next boot
+      // Offline, network error, or localStorage access blocked: ignore
     }
     return false;
   }
@@ -173,13 +179,21 @@ class ProductionSessionService implements SessionModule {
 
       try {
         pruneLegacyKeys();
-        // 1. Check for cookie-based session first
-        const res = await fetch('/api/auth/session', {
-          method: 'GET',
-          headers: {
-            'Cache-Control': 'no-cache',
-          },
-        });
+        // 1. Check for cookie-based session first (5s abort cap so stalled extensions never freeze app boot)
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timeoutId = controller ? setTimeout(() => controller.abort(), 5000) : null;
+        let res: Response;
+        try {
+          res = await fetch('/api/auth/session', {
+            method: 'GET',
+            headers: {
+              'Cache-Control': 'no-cache',
+            },
+            ...(controller ? { signal: controller.signal } : {}),
+          });
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
 
         if (res.ok) {
           const data = await res.json() as {

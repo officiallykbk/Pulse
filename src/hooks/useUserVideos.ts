@@ -12,12 +12,16 @@ export function useUserVideos(userId: string | null) {
       setUploaded([]);
       return;
     }
-    const { data } = await supabase
-      .from('videos')
-      .select('*')
-      .eq('uploader_id', userId)
-      .order('created_at', { ascending: false });
-    setUploaded(data ?? []);
+    try {
+      const { data } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('uploader_id', userId)
+        .order('created_at', { ascending: false });
+      setUploaded(data ?? []);
+    } catch {
+      setUploaded([]);
+    }
   }, [userId]);
 
   const fetchLiked = useCallback(async () => {
@@ -25,35 +29,42 @@ export function useUserVideos(userId: string | null) {
       setLiked([]);
       return;
     }
-    const { data: likeData } = await supabase
-      .from('likes')
-      .select('video_id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data: likeData } = await supabase
+        .from('likes')
+        .select('video_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (!likeData || likeData.length === 0) {
+      if (!likeData || likeData.length === 0) {
+        setLiked([]);
+        return;
+      }
+
+      const videoIds = likeData.map((l) => l.video_id);
+      const { data: videoData } = await supabase
+        .from('videos')
+        .select('*')
+        .in('id', videoIds)
+        .eq('is_active', true);
+
+      const ordered = (videoData ?? []).sort(
+        (a, b) => videoIds.indexOf(a.id) - videoIds.indexOf(b.id)
+      );
+      setLiked(ordered);
+    } catch {
       setLiked([]);
-      return;
     }
-
-    const videoIds = likeData.map((l) => l.video_id);
-    const { data: videoData } = await supabase
-      .from('videos')
-      .select('*')
-      .in('id', videoIds)
-      .eq('is_active', true);
-
-    const ordered = (videoData ?? []).sort(
-      (a, b) => videoIds.indexOf(a.id) - videoIds.indexOf(b.id)
-    );
-    setLiked(ordered);
   }, [userId]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchUploaded(), fetchLiked()]);
-      setLoading(false);
+      try {
+        await Promise.all([fetchUploaded(), fetchLiked()]);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [fetchUploaded, fetchLiked]);
 

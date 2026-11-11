@@ -1,4 +1,5 @@
 import { APP_IDENTITY } from '@/config/appIdentity';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 const SETTINGS_KEY = APP_IDENTITY.storageKeys.settings;
 export const SETTINGS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -13,11 +14,10 @@ export const DEFAULT_SETTINGS: AppSettings = { dataSaver: false, autoplay: true,
 
 export function loadAppSettings(): AppSettings {
   try {
-    if (typeof localStorage === 'undefined') return DEFAULT_SETTINGS;
-    let raw = localStorage.getItem(SETTINGS_KEY);
+    let raw = safeLocalStorage.getItem(SETTINGS_KEY);
     if (!raw && APP_IDENTITY.storageKeys.legacySettings) {
       for (const legacyKey of APP_IDENTITY.storageKeys.legacySettings) {
-        raw = localStorage.getItem(legacyKey);
+        raw = safeLocalStorage.getItem(legacyKey);
         if (raw) break;
       }
     }
@@ -29,7 +29,7 @@ export function loadAppSettings(): AppSettings {
     // If TTL expiration exists, enforce 24-hour limit
     if (typeof parsed.expiresAt === 'number' && Date.now() >= parsed.expiresAt) {
       try {
-        localStorage.removeItem(SETTINGS_KEY);
+        safeLocalStorage.removeItem(SETTINGS_KEY);
       } catch {
         // Ignore
       }
@@ -52,12 +52,11 @@ export function loadAppSettings(): AppSettings {
 
 export function saveAppSettings(settings: AppSettings, ttlMs: number = SETTINGS_TTL_MS): void {
   try {
-    if (typeof localStorage === 'undefined') return;
     const payload = {
       ...settings,
       expiresAt: Date.now() + ttlMs,
     };
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+    safeLocalStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
   } catch {
     // Ignore storage write issues
   }

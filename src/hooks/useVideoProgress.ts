@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { supabase } from '@/services/supabase';
 import { loadAppSettings } from '@/lib/settings';
 import { anonymousState } from '@/lib/anonymousState';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 const RESUME_KEY = 'pulse:resume-position:';
 const RESUME_THRESHOLD_SECONDS = 8;
@@ -65,10 +66,10 @@ export function useVideoProgress(
           anonymousState.recordProgress(videoId, position, completed);
         } else {
           const key = localKey(videoId, userIdRef.current);
-          if (completed || position < RESUME_THRESHOLD_SECONDS) localStorage.removeItem(key);
-          else localStorage.setItem(key, String(Math.floor(position)));
+          if (completed || position < RESUME_THRESHOLD_SECONDS) safeLocalStorage.removeItem(key);
+          else safeLocalStorage.setItem(key, String(Math.floor(position)));
         }
-        localStorage.removeItem(legacyLocalKey(videoId));
+        safeLocalStorage.removeItem(legacyLocalKey(videoId));
       } catch { /* Storage may be unavailable. */ }
     };
 
@@ -192,8 +193,8 @@ export function useVideoProgress(
         if (!resume) {
           try {
             resume = Number(
-              localStorage.getItem(localKey(videoId, userIdRef.current))
-              ?? localStorage.getItem(legacyLocalKey(videoId))
+              safeLocalStorage.getItem(localKey(videoId, userIdRef.current))
+              ?? safeLocalStorage.getItem(legacyLocalKey(videoId))
               ?? 0
             );
           } catch {

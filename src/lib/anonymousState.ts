@@ -12,6 +12,7 @@
 
 import { type TtlStorageAdapter } from './ttlStorage';
 import { trackFunnelEvent } from './funnelTelemetry';
+import { safeLocalStorage } from './safeStorage';
 
 export const ANONYMOUS_STORAGE_KEY = 'pulse:anonymous:v1';
 export const MAX_ANONYMOUS_SAVES = 5;
@@ -78,18 +79,8 @@ export interface AnonymousStateModule {
   subscribe(listener: () => void): () => void;
 }
 
-function getBrowserStorage(): TtlStorageAdapter | null {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage;
-    }
-    if (typeof localStorage !== 'undefined') {
-      return localStorage;
-    }
-  } catch {
-    // Storage access restricted
-  }
-  return null;
+function getBrowserStorage(): TtlStorageAdapter {
+  return safeLocalStorage;
 }
 
 export class AnonymousStateManager implements AnonymousStateModule {
