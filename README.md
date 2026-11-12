@@ -4,6 +4,8 @@
 > **Target Devices:** Low-end mobile devices (e.g. Samsung Galaxy A12, Android Go, 1GB–2GB RAM) & 2G/3G networks in emerging markets.  
 > **Key SLA:** 90+ Lighthouse Performance score, <2s playback startup, zero web fonts, strict 3-slot video virtualization, zero pop-unders.
 
+> **Going live:** Follow [`docs/GO_LIVE_RUNBOOK.md`](docs/GO_LIVE_RUNBOOK.md). The deployment examples later in this README are architectural background and include older assumptions.
+
 ---
 
 ## Quick Start
@@ -11,7 +13,7 @@
 ```bash
 npm install
 npm run dev        # start local Vite dev server
-npm test           # run all 175 unit & integration tests
+npm test           # run all unit & integration tests
 npm run test:watch # continuous test watcher
 npm run typecheck  # strict TypeScript check
 npm run build      # production PWA build
@@ -210,6 +212,7 @@ All payments are verified server-side through `supabase/functions/verifypayment/
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | In-depth architectural blueprint, component graph, and data flow |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Table schemas, migration records, and RLS security model |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Production launch checklist and credential directory |
+| [`docs/GO_LIVE_RUNBOOK.md`](docs/GO_LIVE_RUNBOOK.md) | Complete manual setup, production gates, go-live verification, and operations |
 | [`worker/README.md`](worker/README.md) | Dedicated Oracle Cloud VM FFmpeg worker runbook |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test suite breakdown (175 passing tests) |
 | [`docs/USER_FLOWS.md`](docs/USER_FLOWS.md) | Detailed user flow state machines |

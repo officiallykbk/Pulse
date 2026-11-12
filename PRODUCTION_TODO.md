@@ -1,6 +1,8 @@
 # Pulse Production Launch Tracker
 
-Single source of truth for the launch checklist.
+> Use [`docs/GO_LIVE_RUNBOOK.md`](docs/GO_LIVE_RUNBOOK.md) for the current dependency-ordered setup procedure, verified production gates, credential destinations, and acceptance tests.
+
+Feature-completion tracker; the go-live runbook is the operator source of truth.
 
 Status legend: [x] Done · [~] In progress · [ ] Not started · [YOU] Requires your action
 

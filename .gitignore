@@ -10,6 +10,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.wrangler/
+supabase/.temp/
+.mock-data/
+.playwright-cli/
+output/
 
 .vscode/*
 !.vscode/extensions.json

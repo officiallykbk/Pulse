@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pulse-ghana",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-09",
+  "kv_namespaces": [
+    {
+      "binding": "AGE_VERIFICATIONS",
+      "id": "00ff6f3eeacd4c69a50b89d47055b4ac"
+    },
+    {
+      "binding": "RATE_LIMITS",
+      "id": "6ff743d0e16c4980b6833df5beec6a6c"
+    }
+  ]
+}

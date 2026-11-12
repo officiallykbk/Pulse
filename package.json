@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "seed:mock": "node scripts/seed-mock-data.mjs",
+    "benchmark:platform": "node scripts/benchmark-platform.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

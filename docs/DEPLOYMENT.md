@@ -1,5 +1,7 @@
 # Pulse — Deployment Runbook & Go-Live Checklist
 
+> **Operator note:** Use [`GO_LIVE_RUNBOOK.md`](GO_LIVE_RUNBOOK.md) as the current production source of truth. This file is retained as an earlier architecture overview and contains obsolete variables and assumptions.
+
 Go-live sequence. Items marked **[YOU]** need an account purchase or credentials from the owner; everything else is automated configuration/code.
 
 ---
