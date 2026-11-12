@@ -5,7 +5,7 @@ import { CommentsSheet } from '@/components/CommentsSheet';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
 import { AgeGateModal } from '@/components/AgeGateModal';
 import { TrustConversionModal, type AuthIntent } from '@/components/TrustConversionModal';
-import { Bookmark, Heart, Share2, MoreVertical, Volume2, VolumeX, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
+import { Bookmark, Check, Heart, MessageCircle, Plus, Send, Volume2, VolumeX } from 'lucide-react';
 import { useLikes } from '@/hooks/useLikes';
 import { useFollow } from '@/hooks/useFollow';
 import { useSoundState } from '@/hooks/useSoundState';
@@ -35,9 +35,12 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentCount, setCommentCount] = useState(video.comment_count);
+  const [shareCount, setShareCount] = useState(video.share_count);
   const [saved, setSaved] = useState(false);
   const [savingVideo, setSavingVideo] = useState(false);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const lastTapRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewedRef = useRef(false);
 
   const isRestricted = video.visibility === 'age_restricted';
@@ -89,7 +92,9 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
 
   useEffect(() => {
     setCommentCount(video.comment_count);
-  }, [video.id, video.comment_count]);
+    setShareCount(video.share_count);
+    setCaptionExpanded(false);
+  }, [video.id, video.comment_count, video.share_count]);
 
   useEffect(() => {
     let active = true;
@@ -160,14 +165,14 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   }, [toggleMute]);
 
   useEffect(() => {
-    if (isActive && !viewedRef.current) {
+    if (tier !== 'anonymous' && isActive && !viewedRef.current) {
       viewedRef.current = true;
       supabase.rpc('increment_view_count', { video_id: video.id }).then(() => {});
     }
     if (!isActive) {
       viewedRef.current = false;
     }
-  }, [isActive, video.id]);
+  }, [isActive, tier, video.id]);
 
   const handleDoubleTap = useCallback(() => {
     if (tier === 'anonymous') {
@@ -185,12 +190,27 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   const handleTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
       handleDoubleTap();
       lastTapRef.current = 0;
     } else {
       lastTapRef.current = now;
+      tapTimerRef.current = setTimeout(() => {
+        feedActions.emit('play-pause');
+        lastTapRef.current = 0;
+        tapTimerRef.current = null;
+      }, 300);
     }
   }, [handleDoubleTap]);
+
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    };
+  }, []);
 
   const handleLikeClick = useCallback(() => {
     if (tier === 'anonymous') {
@@ -232,10 +252,13 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
     }
 
     if (shared) {
-      supabase.rpc('increment_share_count', { video_id: video.id }).then(() => {});
+      if (tier !== 'anonymous') {
+        supabase.rpc('increment_share_count', { video_id: video.id }).then(() => {});
+      }
+      setShareCount((count) => count + 1);
       toast.success(typeof navigator.share === 'function' ? 'Shared!' : 'Link copied to clipboard');
     }
-  }, [video.title, video.description, video.id, shareUrl]);
+  }, [video.title, video.description, video.id, shareUrl, tier]);
 
   const handleReport = useCallback(async (reason: string) => {
     const result = await submitReport({
@@ -290,9 +313,17 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
   }, [isActive, handleShare]);
 
   const formatCount = (n: number) => {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace('.0', '')}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1).replace('.0', '')}K`;
     return String(n);
   };
+
+  const creatorName = video.uploader?.display_name || 'creator';
+  const captionText = [video.title, video.description].filter(Boolean).join(' ');
+  const captionCanExpand = captionText.length > 88;
+  const actionButtonClass = 'video-action-button group flex min-h-12 w-12 flex-col items-center justify-center gap-0.5 text-white active:scale-90 disabled:opacity-50';
+  const actionIconClass = 'video-action-icon h-8 w-8 transition-transform group-active:scale-90 [filter:drop-shadow(0_1px_3px_rgba(0,0,0,0.95))]';
+  const actionCountClass = 'video-action-count min-h-3.5 text-[11px] font-semibold leading-3.5 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]';
 
   return (
     <div className="absolute inset-0">
@@ -322,7 +353,7 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
         </div>
       )}
 
-      <div className="absolute inset-0 z-10" onClick={handleTap} />
+      <div className="absolute inset-0 z-10" onClick={handleTap} data-testid="video-tap-surface" />
 
       <div className="pointer-events-none absolute inset-0 z-[15] bg-gradient-to-t from-black/70 via-transparent to-black/20" />
 
@@ -336,106 +367,117 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
       )}
 
       <div
-        className="absolute left-0 right-0 z-20 px-4 pb-1 pr-18 sm:pr-20"
-        style={{
-          bottom: 'max(4.25rem, calc(3.75rem + env(safe-area-inset-bottom, 0px)))',
-          paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom))',
-        }}
+        className={`video-caption absolute left-0 right-0 z-20 px-4 pb-1 pr-18 sm:pr-20 ${captionExpanded ? 'is-expanded' : ''}`}
       >
-        <div className="mb-2 flex items-center gap-2">
-          {video.uploader?.avatar_url ? (
-            <img
-              src={video.uploader.avatar_url}
-              alt={video.uploader.display_name || 'Creator avatar'}
-              className="h-7 w-7 rounded-full object-cover ring-1 ring-white/20"
-            />
-          ) : (
-            <GeneratedAvatar
-              name={video.uploader?.display_name || 'Pulse creator'}
-              className="h-7 w-7 text-[10px] ring-1 ring-white/20"
-            />
-          )}
-          <span className="text-xs font-semibold text-white drop-shadow-sm">
-            @{video.uploader?.display_name || 'creator'}
-          </span>
+        <div className="mb-1.5 text-sm font-bold text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+          @{creatorName}
         </div>
-        <h2 className="mb-1 text-sm sm:text-base font-semibold text-white line-clamp-1">{video.title}</h2>
-        {video.description && (
-          <p className="line-clamp-2 text-xs sm:text-sm text-white/70 leading-snug">{video.description}</p>
+        <h2 className={`video-caption-copy text-[15px] leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] sm:text-base ${captionExpanded ? '' : 'line-clamp-2'}`}>
+          <span className="font-semibold">{video.title}</span>
+          {video.description && <span className="font-normal text-white/85"> {video.description}</span>}
+        </h2>
+        {captionCanExpand && (
+          <button
+            type="button"
+            onClick={() => setCaptionExpanded((expanded) => !expanded)}
+            aria-expanded={captionExpanded}
+            className="mt-1 min-h-8 rounded-full pr-3 text-xs font-semibold text-white/75 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
+          >
+            {captionExpanded ? 'Show less' : 'More'}
+          </button>
         )}
       </div>
 
       <div
-        className="absolute right-2 sm:right-3 z-20 flex flex-col items-center gap-2.5 sm:gap-3.5"
-        style={{
-          bottom: 'max(4.25rem, calc(3.75rem + env(safe-area-inset-bottom, 0px)))',
-        }}
+        className="video-action-rail absolute right-1.5 z-20 flex flex-col items-center gap-1.5 sm:right-2 sm:gap-2"
+        aria-label="Video actions"
       >
-        {video.uploader_id && (
-          <button onClick={handleFollowClick} disabled={busy} className="flex flex-col items-center gap-1">
-            <div className={`flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-sm transition-all active:scale-90 ${following ? 'bg-accent/20' : 'bg-white/10'}`}>
-              {following
-                ? <UserCheck className="h-5 w-5 text-accent" />
-                : <UserPlus className="h-5 w-5 text-white" />}
-            </div>
-            <span className="text-[11px] font-medium text-white/80">{following ? 'Following' : 'Follow'}</span>
+        {video.uploader_id ? (
+          <button
+            onClick={handleFollowClick}
+            disabled={busy}
+            aria-label={following ? `Unfollow @${creatorName}` : `Follow @${creatorName}`}
+            className="video-creator-action group relative mb-1 flex h-14 w-14 items-center justify-center active:scale-95 disabled:opacity-60"
+          >
+            {video.uploader?.avatar_url ? (
+              <img
+                src={video.uploader.avatar_url}
+                alt=""
+                className="video-creator-avatar h-12 w-12 rounded-full border border-white/70 object-cover shadow-[0_2px_8px_rgba(0,0,0,0.65)]"
+              />
+            ) : (
+              <GeneratedAvatar
+                name={video.uploader?.display_name || 'Pulse creator'}
+                className="video-creator-avatar h-12 w-12 border border-white/70 text-xs shadow-[0_2px_8px_rgba(0,0,0,0.65)]"
+              />
+            )}
+            <span className={`absolute bottom-0 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black text-white shadow-md ${following ? 'bg-white' : 'bg-accent'}`}>
+              {following ? <Check className="h-3 w-3 text-black" strokeWidth={3} /> : <Plus className="h-3 w-3" strokeWidth={3} />}
+            </span>
           </button>
-        )}
-        <button onClick={handleLikeClick} className="flex flex-col items-center gap-1">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-sm transition-all active:scale-90 ${liked ? 'bg-accent/20' : 'bg-white/10'}`}>
-            <Heart className={`h-5 w-5 transition-all ${liked ? 'fill-accent text-accent scale-110' : 'text-white'}`} />
+        ) : (
+          <div className="mb-1 flex h-14 w-14 items-center justify-center" aria-label={`@${creatorName}`}>
+            <GeneratedAvatar
+              name={video.uploader?.display_name || 'Pulse creator'}
+              className="h-12 w-12 border border-white/70 text-xs shadow-[0_2px_8px_rgba(0,0,0,0.65)]"
+            />
           </div>
-          <span className="text-[11px] font-medium text-white/80">{formatCount(likeCount)}</span>
+        )}
+
+        <button
+          onClick={handleLikeClick}
+          aria-label={liked ? `Unlike video, ${formatCount(likeCount)} likes` : `Like video, ${formatCount(likeCount)} likes`}
+          className={actionButtonClass}
+        >
+          <Heart className={`${actionIconClass} ${liked ? 'scale-110 fill-accent text-accent' : 'text-white'}`} strokeWidth={2.1} />
+          <span className={actionCountClass}>{formatCount(likeCount)}</span>
         </button>
 
-        <button onClick={handleCommentClick} className="flex flex-col items-center gap-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm transition-transform active:scale-90">
-            <MessageCircle className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-[11px] font-medium text-white/80">{formatCount(commentCount)}</span>
+        <button
+          onClick={handleCommentClick}
+          aria-label={`Open comments, ${formatCount(commentCount)} comments`}
+          className={actionButtonClass}
+        >
+          <MessageCircle className={`${actionIconClass} fill-white text-white`} strokeWidth={1.8} />
+          <span className={actionCountClass}>{formatCount(commentCount)}</span>
         </button>
 
         <button
           onClick={() => void handleSaveVideo()}
           disabled={savingVideo}
           aria-label={saved ? 'Remove from Saved' : 'Save video'}
-          className="flex flex-col items-center gap-1 disabled:opacity-50"
+          aria-pressed={saved}
+          className={actionButtonClass}
         >
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-sm transition-transform active:scale-90 ${saved ? 'bg-accent/20' : 'bg-white/10'}`}>
-            <Bookmark className={`h-5 w-5 ${saved ? 'fill-accent text-accent' : 'text-white'}`} />
-          </div>
-          <span className="text-[11px] font-medium text-white/80">{saved ? 'Saved' : 'Save'}</span>
+          <Bookmark className={`${actionIconClass} ${saved ? 'fill-white text-white' : 'text-white'}`} strokeWidth={2} />
+          <span className={actionCountClass}>{saved ? 'Saved' : 'Save'}</span>
         </button>
 
+        <button
+          onClick={() => setOptionsOpen(true)}
+          aria-label={`Share video, ${formatCount(shareCount)} shares`}
+          className={actionButtonClass}
+        >
+          <Send className={`${actionIconClass} fill-white text-white`} strokeWidth={1.8} />
+          <span className={actionCountClass}>{formatCount(shareCount)}</span>
+        </button>
+      </div>
+
+      <div
+        className="video-mute absolute right-3.5 z-50"
+      >
         <button
           onClick={handleMuteClick}
           data-testid="mute-toggle-btn"
           aria-label={isMuted ? 'Unmute sound' : 'Mute sound'}
-          className="flex flex-col items-center gap-1"
+          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-90 ${
+            isMuted
+              ? 'border-white/15 bg-black/45 text-white hover:bg-black/65'
+              : 'border-white bg-white text-black'
+          }`}
         >
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-sm transition-all active:scale-90 ${isMuted ? 'bg-white/10' : 'bg-accent/20'}`}>
-            {isMuted ? (
-              <VolumeX className="h-5 w-5 text-white/90" />
-            ) : (
-              <Volume2 className="h-5 w-5 text-accent" />
-            )}
-          </div>
-          <span className={`text-[11px] font-medium ${isMuted ? 'text-white/80' : 'text-accent font-semibold'}`}>
-            {isMuted ? 'Muted' : 'Sound'}
-          </span>
-        </button>
-
-        <button onClick={handleShare} className="flex flex-col items-center gap-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm transition-transform active:scale-90">
-            <Share2 className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-[11px] font-medium text-white/80">{formatCount(video.share_count)}</span>
-        </button>
-
-        <button onClick={() => setOptionsOpen(true)} className="flex flex-col items-center gap-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm transition-transform active:scale-90">
-            <MoreVertical className="h-5 w-5 text-white" />
-          </div>
+          {isMuted ? <VolumeX className="h-[18px] w-[18px]" /> : <Volume2 className="h-[18px] w-[18px]" />}
+          <span className="sr-only">{isMuted ? 'Muted' : 'Sound'}</span>
         </button>
       </div>
 
@@ -443,6 +485,11 @@ export function VideoCard({ video, isActive, slotState, tier, onRequireAuth, sha
         video={video}
         open={optionsOpen}
         onClose={() => setOptionsOpen(false)}
+        saved={saved}
+        saving={savingVideo}
+        shareCount={shareCount}
+        shareUrl={shareUrl ?? new URL(`/watch/${video.id}`, window.location.origin).toString()}
+        onSave={() => void handleSaveVideo()}
         onShare={handleShare}
         onReport={handleReport}
       />

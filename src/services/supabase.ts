@@ -12,25 +12,39 @@ import { sessionService } from './session';
 export const supabase = {
   ...publicSupabase,
   from: (table: string) => {
-    const accountTables = [
+    const strictAccountTables = [
       'likes',
       'follows',
-      'comments',
+      'comment_likes',
       'saved_videos',
       'video_watch_progress',
-      'profiles',
+      'video_viewing_insights',
       'users',
       'subscriptions',
       'feedback',
+      'reports',
     ];
-    if (accountTables.includes(table)) {
+    const sharedTables = ['profiles', 'comments', 'videos'];
+    const isSignedIn = Boolean(sessionService.getSnapshot().user);
+
+    if (strictAccountTables.includes(table) || (isSignedIn && sharedTables.includes(table))) {
       return accountSupabase.from(table);
     }
     return publicSupabase.from(table);
   },
   rpc: (fn: string, args?: Record<string, unknown>) => {
-    const accountRpcs = ['record_watch_progress', 'claim_video_job'];
-    if (accountRpcs.includes(fn)) {
+    const strictAccountRpcs = [
+      'record_watch_progress',
+      'claim_video_job',
+      'increment_view_count',
+      'increment_share_count',
+      'record_video_viewing_insight',
+      'save_video_watch_progress',
+    ];
+    const sharedRpcs = ['get_comment_reactions'];
+    const isSignedIn = Boolean(sessionService.getSnapshot().user);
+
+    if (strictAccountRpcs.includes(fn) || (isSignedIn && sharedRpcs.includes(fn))) {
       return accountSupabase.rpc(fn, args);
     }
     return publicSupabase.rpc(fn, args);

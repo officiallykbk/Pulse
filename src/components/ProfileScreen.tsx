@@ -16,6 +16,7 @@ import {
 import { supabase } from '@/services/supabase';
 import { APP_IDENTITY } from '@/config/appIdentity';
 import { GeneratedAvatar } from '@/components/GeneratedAvatar';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { useSavedVideos } from '@/hooks/useSavedVideos';
 import { useWatchHistory } from '@/hooks/useWatchHistory';
 import { toast } from 'sonner';
@@ -64,7 +65,7 @@ function VideoListItem({ video, onPlay, resumeAt }: { video: Video; onPlay?: () 
     <div className="flex items-center gap-3 rounded-lg bg-surface-elevated p-2">
       <div className="h-14 w-24 flex-shrink-0 overflow-hidden rounded-md bg-black">
         {video.thumbnail_url ? (
-          <img src={video.thumbnail_url} alt={video.title} className="h-full w-full object-cover" />
+          <img src={resolveMediaUrl(video.thumbnail_url)} alt={video.title} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Film className="h-5 w-5 text-white/20" />

@@ -31,10 +31,11 @@ export function useAuth(): AuthState & {
 } {
   const [state, setState] = useState<AuthState>(() => {
     const snap = sessionService.getSnapshot();
+    const hasSubAuth = Boolean(supabase.auth?.getSession);
     return {
       user: snap.user,
       tier: snap.tier,
-      loading: snap.loading,
+      loading: snap.user ? snap.loading : (hasSubAuth ? true : snap.loading),
     };
   });
 
@@ -95,10 +96,16 @@ export function useAuth(): AuthState & {
     const sessionUnsubscribe = sessionService.subscribe(() => {
       if (cancelled) return;
       const snap = sessionService.getSnapshot();
-      setState({
-        user: snap.user,
-        tier: snap.tier,
-        loading: snap.loading,
+      setState((prev) => {
+        // If subAuth bridge or prior auth established a user and sessionService is anonymous, retain user
+        if (!snap.user && prev.user) {
+          return prev;
+        }
+        return {
+          user: snap.user,
+          tier: snap.tier,
+          loading: snap.loading,
+        };
       });
     });
 

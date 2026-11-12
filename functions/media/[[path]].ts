@@ -61,7 +61,7 @@ export async function onRequest({
 
   const headers = new Headers(upstream.headers);
   headers.set('Cache-Control', `public, max-age=${CACHE_SECONDS}, immutable`);
-  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
   headers.delete('set-cookie');
   headers.delete('server');
 

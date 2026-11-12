@@ -21,6 +21,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import {
   getPendingReviewVideos,
   getVideosForModeration,
@@ -627,7 +628,7 @@ export function AdminDashboard({ onBack }: AdminDashboardProps) {
                     <div className="relative h-24 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-black">
                       {video.thumbnail_url ? (
                         <img
-                          src={video.thumbnail_url}
+                          src={resolveMediaUrl(video.thumbnail_url)}
                           alt={video.title}
                           className="h-full w-full object-cover"
                         />

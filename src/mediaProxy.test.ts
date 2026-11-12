@@ -23,6 +23,7 @@ describe('public media proxy', () => {
 
     expect(response.status).toBe(206);
     expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(fetchMock).toHaveBeenCalledOnce();
     const [upstreamUrl, upstreamOptions] = fetchMock.mock.calls[0];
     expect(String(upstreamUrl)).toBe('https://project.supabase.co/storage/v1/object/public/videos/mock/clip-01.mp4');

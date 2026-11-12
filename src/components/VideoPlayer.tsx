@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState } from 'react';
 import Hls from 'hls.js';
-import { Volume2, VolumeX, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 
 import { feedActions } from '@/lib/feedActions';
-import { useSoundState } from '@/hooks/useSoundState';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
+import { getIsMuted } from '@/hooks/useSoundState';
 import { useVideoProgress } from '@/hooks/useVideoProgress';
 import { loadAppSettings } from '@/lib/settings';
 
@@ -24,9 +25,10 @@ export function VideoPlayer({
   isActive = false,
   slotState: explicitSlotState,
 }: VideoPlayerProps) {
+  const resolvedVideoUrl = resolveMediaUrl(videoUrl);
+  const resolvedPosterUrl = resolveMediaUrl(posterUrl);
   const slotState: PlayerSlotState = explicitSlotState ?? (isActive ? 'active' : 'idle');
-  const { isMuted, toggleMute } = useSoundState();
-
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   useVideoProgress(videoId, videoRef, slotState === 'active');
   const hlsRef = useRef<Hls | null>(null);
@@ -34,6 +36,35 @@ export function VideoPlayer({
   const [error, setError] = useState(false);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [sourceAspect, setSourceAspect] = useState<number | null>(null);
+  const [stageAspect, setStageAspect] = useState<number | null>(null);
+  const isMuted = getIsMuted();
+
+  useEffect(() => {
+    setSourceAspect(null);
+  }, [resolvedVideoUrl]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const measure = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) setStageAspect(rect.width / rect.height);
+    };
+    measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    observer?.observe(container);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  const mediaFit = sourceAspect !== null && stageAspect !== null && sourceAspect <= 0.8 && stageAspect <= 0.85
+    ? 'cover'
+    : 'contain';
 
   // Sync video element mute state with global sound manager
   useEffect(() => {
@@ -73,7 +104,7 @@ export function VideoPlayer({
     // Slot: PREFETCH -> Initialize buffer with 2s chunk at lowest level, keep paused
     if (slotState === 'prefetch') {
       setError(false);
-      if (videoUrl.includes('.m3u8') && Hls.isSupported()) {
+      if (resolvedVideoUrl.includes('.m3u8') && Hls.isSupported()) {
         if (!hlsRef.current) {
           const hls = new Hls({
             maxBufferLength: 2,
@@ -83,7 +114,7 @@ export function VideoPlayer({
             capLevelToPlayerSize: true,
           });
           hlsRef.current = hls;
-          hls.loadSource(videoUrl);
+          hls.loadSource(resolvedVideoUrl);
           hls.attachMedia(video);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             setIsLoaded(true);
@@ -96,8 +127,8 @@ export function VideoPlayer({
         }
       } else {
         video.preload = 'auto';
-        if (video.src !== videoUrl) {
-          video.src = videoUrl;
+        if (video.src !== resolvedVideoUrl) {
+          video.src = resolvedVideoUrl;
         }
         video.muted = true;
         video.pause();
@@ -109,7 +140,7 @@ export function VideoPlayer({
     if (slotState === 'active') {
       setError(false);
       const appSettings = loadAppSettings();
-      if (videoUrl.includes('.m3u8') && Hls.isSupported()) {
+      if (resolvedVideoUrl.includes('.m3u8') && Hls.isSupported()) {
         if (!hlsRef.current) {
           const hls = new Hls({
             maxBufferLength: appSettings.dataSaver ? 2 : 8,
@@ -119,7 +150,7 @@ export function VideoPlayer({
           });
           hls.autoLevelCapping = appSettings.dataSaver ? 0 : -1;
           hlsRef.current = hls;
-          hls.loadSource(videoUrl);
+          hls.loadSource(resolvedVideoUrl);
           hls.attachMedia(video);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             setIsLoaded(true);
@@ -145,8 +176,8 @@ export function VideoPlayer({
           setIsLoaded(true);
         }
       } else {
-        if (video.src !== videoUrl) {
-          video.src = videoUrl;
+        if (video.src !== resolvedVideoUrl) {
+          video.src = resolvedVideoUrl;
           video.onloadeddata = () => {
             setIsLoaded(true);
             video.muted = isMuted;
@@ -176,7 +207,7 @@ export function VideoPlayer({
         hlsRef.current = null;
       }
     };
-  }, [slotState, videoUrl, isMuted]);
+  }, [slotState, resolvedVideoUrl, isMuted]);
 
   // Handle play/pause, timeupdate, and progress for active player
   useEffect(() => {
@@ -235,7 +266,15 @@ export function VideoPlayer({
   }
 
   return (
-    <div className="absolute inset-0 bg-black">
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-black" data-media-fit={mediaFit}>
+      {mediaFit === 'contain' && resolvedPosterUrl && (
+        <div
+          aria-hidden="true"
+          className="absolute -inset-6 scale-110 bg-cover bg-center opacity-35 blur-2xl"
+          style={{ backgroundImage: `url(${resolvedPosterUrl})` }}
+        />
+      )}
+      {mediaFit === 'contain' && <div aria-hidden="true" className="absolute inset-0 bg-black/35" />}
       {!isLoaded && slotState !== 'idle' && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
@@ -244,12 +283,18 @@ export function VideoPlayer({
 
       <video
         ref={videoRef}
-        className="h-full w-full object-cover"
+        className={`relative h-full w-full ${mediaFit === 'cover' ? 'object-cover' : 'object-contain'}`}
         playsInline
         loop
         preload={slotState === 'idle' ? 'none' : 'auto'}
-        poster={posterUrl ?? undefined}
+        poster={resolvedPosterUrl ?? undefined}
         onClick={togglePause}
+        onLoadedMetadata={(event) => {
+          const media = event.currentTarget;
+          if (media.videoWidth > 0 && media.videoHeight > 0) {
+            setSourceAspect(media.videoWidth / media.videoHeight);
+          }
+        }}
       />
 
       {paused && isLoaded && slotState === 'active' && (
@@ -261,17 +306,7 @@ export function VideoPlayer({
       )}
 
       {slotState === 'active' && (
-        <button
-          onClick={toggleMute}
-          aria-label={isMuted ? 'Unmute video' : 'Mute video'}
-          className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-colors active:bg-black/60"
-        >
-          {isMuted ? <VolumeX className="h-4 w-4 text-white" /> : <Volume2 className="h-4 w-4 text-white" />}
-        </button>
-      )}
-
-      {slotState === 'active' && (
-        <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 z-20 h-0.5 bg-white/10">
+        <div data-testid="video-progress" className="video-progress absolute left-0 right-0 z-20 h-0.5 bg-white/15">
           <div
             className="h-full bg-accent transition-all duration-200 ease-out"
             style={{ width: `${progress}%` }}

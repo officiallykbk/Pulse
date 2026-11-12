@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Search, X, ArrowLeft, Eye, Heart } from 'lucide-react';
 import { supabase, publicSupabase } from '@/services/supabase';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import type { Video } from '@/types';
 
 interface SearchMatch {
@@ -181,7 +182,7 @@ export function SearchScreen({ onBack, onPlayVideo }: SearchScreenProps) {
                 <div className="h-16 w-28 flex-shrink-0 overflow-hidden rounded-md bg-surface-elevated">
                   {video.thumbnail_url ? (
                     <img
-                      src={video.thumbnail_url}
+                      src={resolveMediaUrl(video.thumbnail_url)}
                       alt={video.title}
                       className="h-full w-full object-cover"
                     />

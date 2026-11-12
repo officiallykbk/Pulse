@@ -2,9 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
+import { pagesFunctionsDevPlugin } from './vite-pages-functions';
 
 export default defineConfig({
   plugins: [
+    pagesFunctionsDevPlugin(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -37,15 +39,6 @@ export default defineConfig({
       },
     }),
   ],
-  server: {
-    proxy: {
-      '/api/supabase': {
-        target: process.env.VITE_SUPABASE_URL || 'https://ncoiyubkjymurfazgcqk.supabase.co',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/supabase/, ''),
-      },
-    },
-  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
