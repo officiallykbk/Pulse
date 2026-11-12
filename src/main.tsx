@@ -6,10 +6,15 @@ import { Toaster } from 'sonner';
 import { SessionProvider } from '@/context/SessionProvider';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
-// Desktop keeps the phone layout in a centered device-style frame.
+// Use the framed composition only when both dimensions can support it.
 try {
-  if (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 768px)')?.matches) {
-    document.body.classList.add('desktop-frame');
+  if (typeof window !== 'undefined') {
+    const roomyViewport = window.matchMedia?.(
+      '(min-width: 768px) and (min-height: 720px), (min-width: 900px) and (min-height: 600px)',
+    );
+    const syncFrameClass = () => document.body.classList.toggle('desktop-frame', Boolean(roomyViewport?.matches));
+    syncFrameClass();
+    roomyViewport?.addEventListener?.('change', syncFrameClass);
   }
 } catch {
   // Ignore on restricted environments

@@ -85,6 +85,14 @@ describe('CommentsSheet', () => {
     expect(screen.getByPlaceholderText('Share your take…')).toBeInTheDocument();
   });
 
+  it('portals the global sheet to document.body above app navigation', async () => {
+    render(<CommentsSheet videoId="video-1" open onClose={vi.fn()} />);
+    await act(async () => undefined);
+    const dialog = screen.getByRole('dialog', { name: 'Comments' });
+    expect(dialog.closest('.comments-overlay')?.parentElement).toBe(document.body);
+    expect(document.body).toHaveClass('pulse-comments-open');
+  });
+
   it('posts a comment and updates the visible count', async () => {
     const user = userEvent.setup();
     const onCommentCountChange = vi.fn();

@@ -272,42 +272,51 @@ export function AdController({
             onError={handleVideoError}
             className="h-full w-full object-cover"
           />
-          <button
-            onClick={toggleMute}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-            className="absolute top-20 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md transition-transform active:scale-90"
-          >
-            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-          </button>
         </div>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-b from-[#181818] via-[#121212] to-[#000000]" />
       )}
 
-      {/* Top Banner: Sponsored Badge & Pro Upgrade Link */}
+      {/* Top Banner: Sponsored Badge, Pro Upgrade Link & Ad Mute Control */}
       <div
-        className="relative z-10 flex items-center justify-between px-4"
+        className="relative z-10 flex items-center justify-between px-3.5"
         style={{
-          paddingTop: 'max(4.25rem, calc(3.5rem + env(safe-area-inset-top, 0px)))',
+          paddingTop: 'max(3.875rem, calc(3.25rem + env(safe-area-inset-top, 0px)))',
         }}
       >
-        <div className="flex items-center gap-2 rounded-full bg-[#1e1e1e]/85 px-3 py-1 ring-1 ring-white/10 backdrop-blur-md">
-          <span className="text-[10px] font-bold tracking-wider uppercase text-[#9E9E9E]">
+        <div className="flex min-w-0 items-center gap-2 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 shadow-lg backdrop-blur-md">
+          <span className="text-[10px] font-bold tracking-wider uppercase text-white/60">
             Sponsored
           </span>
-          <span className="text-xs text-white/50">•</span>
-          <span className="text-xs text-white/70">
+          <span className="text-xs text-white/40">•</span>
+          <span className="truncate text-xs font-medium text-white/85">
             {adVideo?.title || networkName}
           </span>
         </div>
 
-        <button
-          onClick={onUpgrade}
-          className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/40 px-3 py-1 text-xs font-medium text-white/90 backdrop-blur-md transition-colors hover:border-accent hover:text-accent"
-        >
-          <Crown className="h-3.5 w-3.5 text-accent" />
-          <span>{tier === 'anonymous' ? 'Sign in' : 'Go Pro'}</span>
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={onUpgrade}
+            className="flex h-10 items-center gap-1.5 rounded-full border border-accent/40 bg-black/50 px-3.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition-all hover:border-accent hover:bg-accent/15 active:scale-95"
+          >
+            <Crown className="h-3.5 w-3.5 text-accent" />
+            <span>{tier === 'anonymous' ? 'Sign in' : 'Go Pro'}</span>
+          </button>
+
+          {adVideo?.videoUrl && !videoError && (
+            <button
+              onClick={toggleMute}
+              aria-label={muted ? 'Unmute' : 'Mute'}
+              className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-90 ${
+                muted
+                  ? 'border-white/15 bg-black/45 text-white hover:bg-black/65'
+                  : 'border-white bg-white text-black'
+              }`}
+            >
+              {muted ? <VolumeX className="h-[18px] w-[18px]" /> : <Volume2 className="h-[18px] w-[18px]" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Center: Advertiser message or sponsor card (No lock icon on un-locked cards) */}

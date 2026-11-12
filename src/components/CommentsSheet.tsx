@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   Flag,
@@ -116,7 +117,25 @@ export function CommentsSheet({
       ? document.activeElement
       : null;
     const previousBodyOverflow = document.body.style.overflow;
+    const previousViewportHeight = document.documentElement.style.getPropertyValue('--pulse-visual-viewport-height');
+    const previousViewportTop = document.documentElement.style.getPropertyValue('--pulse-visual-viewport-top');
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('pulse-comments-open');
+
+    const syncVisualViewport = () => {
+      const viewport = window.visualViewport;
+      document.documentElement.style.setProperty(
+        '--pulse-visual-viewport-height',
+        `${Math.round(viewport?.height ?? window.innerHeight)}px`,
+      );
+      document.documentElement.style.setProperty(
+        '--pulse-visual-viewport-top',
+        `${Math.round(viewport?.offsetTop ?? 0)}px`,
+      );
+    };
+    syncVisualViewport();
+    window.visualViewport?.addEventListener('resize', syncVisualViewport);
+    window.visualViewport?.addEventListener('scroll', syncVisualViewport);
 
     void supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!active) return;
@@ -163,7 +182,20 @@ export function CommentsSheet({
       window.clearTimeout(focusTimer);
       active = false;
       window.removeEventListener('keydown', handleKeyDown);
+      window.visualViewport?.removeEventListener('resize', syncVisualViewport);
+      window.visualViewport?.removeEventListener('scroll', syncVisualViewport);
       document.body.style.overflow = previousBodyOverflow;
+      document.body.classList.remove('pulse-comments-open');
+      if (previousViewportHeight) {
+        document.documentElement.style.setProperty('--pulse-visual-viewport-height', previousViewportHeight);
+      } else {
+        document.documentElement.style.removeProperty('--pulse-visual-viewport-height');
+      }
+      if (previousViewportTop) {
+        document.documentElement.style.setProperty('--pulse-visual-viewport-top', previousViewportTop);
+      } else {
+        document.documentElement.style.removeProperty('--pulse-visual-viewport-top');
+      }
       previouslyFocused?.focus();
     };
   }, [open, onClose]);
@@ -187,7 +219,7 @@ export function CommentsSheet({
     inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 112)}px`;
   }, [text]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -310,8 +342,15 @@ export function CommentsSheet({
 
   const visibleComments = comments.filter((comment) => !mutedAuthorIds.has(comment.user_id));
 
-  return (
-    <div className="fixed inset-0 z-[95] flex items-end justify-center md:items-center md:px-6 md:py-8" role="presentation">
+  return createPortal(
+    <div
+      className="comments-overlay fixed left-0 z-[110] flex w-full items-end justify-center md:items-center md:px-6 md:py-8"
+      style={{
+        top: 'var(--pulse-visual-viewport-top, 0px)',
+        height: 'var(--pulse-visual-viewport-height, 100dvh)',
+      }}
+      role="presentation"
+    >
       <button
         type="button"
         aria-label="Close comments"
@@ -324,7 +363,7 @@ export function CommentsSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="comments-title"
-        className="relative flex h-[min(88dvh,760px)] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] border-t border-white/10 bg-[#101010] shadow-2xl md:h-[min(82vh,760px)] md:rounded-2xl md:border md:border-white/10"
+        className="comments-dialog relative flex h-[min(88dvh,760px)] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] border-t border-white/10 bg-[#101010] shadow-2xl md:h-[min(82vh,760px)] md:rounded-2xl md:border md:border-white/10"
         style={{ animation: 'slideUp 0.25s ease-out' }}
       >
         <div className="mx-auto mb-2 mt-3 h-1 w-10 rounded-full bg-white/20 md:hidden" />
@@ -637,6 +676,7 @@ export function CommentsSheet({
           )}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

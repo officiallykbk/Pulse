@@ -222,7 +222,13 @@ export function VideoFeed({
 
   return (
     <div className="relative h-full bg-black">
-      <TopBar tier={tier} onUpgrade={onUpgrade} onSearch={onSearch} disabled={adLocked} />
+      <TopBar
+        tier={tier}
+        onUpgrade={onUpgrade}
+        onSearch={onSearch}
+        disabled={adLocked}
+        hideUpgrade={feedItems[activeIndex]?.type === 'ad'}
+      />
       {hintVisible && !adLocked && (
         <div className="desktop-hint absolute left-1/2 top-16 z-40 -translate-x-1/2">
           <div

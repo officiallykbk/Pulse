@@ -5,6 +5,7 @@ import { SettingsScreen } from '@/components/SettingsScreen';
 import { SupportScreen } from '@/components/SupportScreen';
 import { ProUpgradeModal } from '@/components/ProUpgradeModal';
 import { VideoOptionsSheet } from '@/components/VideoOptionsSheet';
+import { TopBar } from '@/components/TopBar';
 import { makeVideo } from '@/test/helpers';
 import { APP_IDENTITY } from '@/config/appIdentity';
 
@@ -192,7 +193,12 @@ describe('VideoOptionsSheet report flow', () => {
   const baseProps = {
     video: makeVideo(),
     open: true,
+    saved: false,
+    saving: false,
+    shareCount: 12,
+    shareUrl: 'https://pulse.example/watch/video-1',
     onClose: vi.fn(),
+    onSave: vi.fn(),
     onShare: vi.fn(),
     onReport: vi.fn(),
   };
@@ -209,6 +215,23 @@ describe('VideoOptionsSheet report flow', () => {
     expect(screen.getByText('Why are you reporting this video?')).toBeInTheDocument();
     expect(screen.getByText('Inappropriate content')).toBeInTheDocument();
     expect(screen.getByText('Copyright violation')).toBeInTheDocument();
+  });
+
+  it('keeps save and share actions inside the options sheet', async () => {
+    const user = userEvent.setup();
+    render(<VideoOptionsSheet {...baseProps} />);
+
+    await user.click(screen.getByRole('button', { name: 'Save video' }));
+    expect(baseProps.onSave).toHaveBeenCalledOnce();
+    expect(baseProps.onClose).toHaveBeenCalledOnce();
+  });
+
+  it('copies the public watch URL instead of the raw media URL', async () => {
+    const user = userEvent.setup();
+    render(<VideoOptionsSheet {...baseProps} />);
+
+    await user.click(screen.getByRole('button', { name: 'Copy video link' }));
+    expect(await navigator.clipboard.readText()).toBe(baseProps.shareUrl);
   });
 
   it('submits the chosen reason and closes', async () => {
@@ -232,5 +255,35 @@ describe('VideoOptionsSheet report flow', () => {
   it('renders nothing when closed', () => {
     render(<VideoOptionsSheet {...baseProps} open={false} />);
     expect(screen.queryByText('Report video')).not.toBeInTheDocument();
+  });
+});
+
+// ---------- TopBar ----------
+
+describe('TopBar', () => {
+  it('renders an explicit "Go Pro" CTA pill for free and anonymous users', async () => {
+    const user = userEvent.setup();
+    const onUpgrade = vi.fn();
+    render(<TopBar tier="free" onUpgrade={onUpgrade} onSearch={vi.fn()} />);
+
+    const cta = screen.getByRole('button', { name: 'Go Pro' });
+    expect(cta).toBeInTheDocument();
+    expect(screen.queryByLabelText('Pro Member')).not.toBeInTheDocument();
+
+    await user.click(cta);
+    expect(onUpgrade).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the upgrade CTA with a PRO status badge next to the logo when tier is pro', () => {
+    render(<TopBar tier="pro" onUpgrade={vi.fn()} onSearch={vi.fn()} />);
+
+    expect(screen.getByLabelText('Pro Member')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Go Pro' })).not.toBeInTheDocument();
+  });
+
+  it('hides the duplicate upgrade CTA when viewing an ad card (hideUpgrade)', () => {
+    render(<TopBar tier="free" onUpgrade={vi.fn()} onSearch={vi.fn()} hideUpgrade />);
+
+    expect(screen.queryByRole('button', { name: 'Go Pro' })).not.toBeInTheDocument();
   });
 });

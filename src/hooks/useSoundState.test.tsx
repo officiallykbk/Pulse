@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, render, screen } from '@testing-library/react';
+import { renderHook, act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSoundState, getIsMuted, setIsMuted } from '@/hooks/useSoundState';
 import { VideoCard } from '@/components/VideoCard';
 import { makeVideo } from '@/test/helpers';
 import { anonymousState } from '@/lib/anonymousState';
+import { feedActions } from '@/lib/feedActions';
 
 const supabaseState = vi.hoisted(() => ({ saved: false }));
 
@@ -72,7 +73,7 @@ describe('Sound & Mute State System', () => {
     expect(getIsMuted()).toBe(true);
   });
 
-  it('renders a Mute button in VideoCard action rail and toggles sound on click', async () => {
+  it('renders the single card-owned mute control and toggles sound on click', async () => {
     const user = userEvent.setup();
     const video = makeVideo();
 
@@ -85,7 +86,6 @@ describe('Sound & Mute State System', () => {
       />
     );
 
-    // Initial state: Muted button is present with 'Muted' label (replacing the old eye views counter)
     const muteBtn = screen.getByTestId('mute-toggle-btn');
     expect(muteBtn).toBeInTheDocument();
     expect(muteBtn).toHaveAttribute('aria-label', 'Unmute sound');
@@ -95,6 +95,26 @@ describe('Sound & Mute State System', () => {
     await user.click(muteBtn);
     expect(muteBtn).toHaveAttribute('aria-label', 'Mute sound');
     expect(screen.getByText('Sound')).toBeInTheDocument();
+  });
+
+  it('uses a single video tap to toggle play or pause', async () => {
+    vi.useFakeTimers();
+    const onPlayPause = vi.fn();
+    const unsubscribe = feedActions.on('play-pause', onPlayPause);
+
+    render(<VideoCard video={makeVideo()} isActive={false} tier="free" onRequireAuth={() => {}} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByTestId('video-tap-surface'));
+
+    expect(onPlayPause).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(300));
+    expect(onPlayPause).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    vi.useRealTimers();
   });
 
   it('lets signed-in viewers save and unsave a video', async () => {
@@ -130,5 +150,21 @@ describe('Sound & Mute State System', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Save video' }));
     expect(onRequireAuth).toHaveBeenCalledOnce();
+  });
+
+  it('exposes the full primary rail and opens a sharing-first sheet', async () => {
+    const user = userEvent.setup();
+    render(<VideoCard video={makeVideo({ share_count: 245 })} isActive tier="free" onRequireAuth={() => {}} />);
+
+    expect(screen.getByRole('button', { name: /Follow @creator/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like video/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open comments/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save video' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More video options' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Share video, 245 shares/i }));
+    expect(await screen.findByRole('dialog', { name: 'Share this video' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy video link' })).toBeInTheDocument();
+    expect(screen.getByText('Report video')).toBeInTheDocument();
   });
 });

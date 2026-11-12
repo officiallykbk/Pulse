@@ -34,10 +34,16 @@ export function SideRail({ activeView, onChange, disabled }: SideRailProps) {
             className="flex w-full flex-col items-center gap-1 rounded-xl py-3 transition-colors hover:bg-white/5"
             aria-current={active ? 'page' : undefined}
           >
-            <Icon
-              className={`h-6 w-6 transition-colors ${active ? 'text-accent' : 'text-white/50'}`}
-              strokeWidth={active ? 2.5 : 2}
-            />
+            {view === 'upload' ? (
+              <span className={`flex h-9 w-12 items-center justify-center rounded-xl ${active ? 'bg-accent text-white' : 'bg-white text-black'}`}>
+                <Icon className="h-5 w-5" strokeWidth={2.4} />
+              </span>
+            ) : (
+              <Icon
+                className={`h-6 w-6 transition-colors ${active ? 'text-accent' : 'text-white/50'}`}
+                strokeWidth={active ? 2.5 : 2}
+              />
+            )}
             <span
               className={`text-[11px] transition-colors ${active ? 'text-white' : 'text-white/50'}`}
             >
