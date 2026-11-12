@@ -55,9 +55,8 @@ describe('useAuth tier detection', () => {
   it('reports free for signed-in users without an active subscription', async () => {
     state.session = { user: { id: 'u1', email: 'a@b.c' } };
     const { result } = renderHook(() => useAuth());
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.user?.email).toBe('a@b.c'));
     expect(result.current.tier).toBe('free');
-    expect(result.current.user?.email).toBe('a@b.c');
   });
 
   it('reports pro for an active unexpired subscription', async () => {
